@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function LoginPage() {
@@ -28,8 +28,11 @@ export default function LoginPage() {
     <div className="h-screen w-full flex items-center justify-center bg-paper font-sans px-4">
       <div className="w-full max-w-[380px]">
         <div className="flex items-center gap-2.5 mb-8 justify-center">
-          <div className="w-8 h-8 rounded-[8px] bg-ink flex items-center justify-center">
-            <span className="font-display text-paper text-base font-semibold">M</span>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center">
+              <img
+                  src="/chatbot.png"
+                  className="w-6 h-6 object-contain"
+              />
           </div>
           <span className="font-display text-xl font-semibold">LegalRAG</span>
         </div>
@@ -88,7 +91,10 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-inkfaint mt-5">
-          Chưa có tài khoản? <span className="text-indigo cursor-pointer">Liên hệ quản trị viên</span>
+          Chưa có tài khoản?{" "}
+          <Link to="/register" className="text-indigo hover:underline">
+            Đăng ký
+          </Link>
         </p>
       </div>
     </div>

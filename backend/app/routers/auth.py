@@ -39,6 +39,10 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code= status.HTTP_401_UNAUTHORIZED, detail= str(e))
     return TokenResponse(token= token, user= user)
 
+@router.post("/logout")
+def logout():
+    return {"message": "Đăng xuất thành công!"}
+
 @router.get("/me", response_model= UserOut)
 def read_current_user(current_user: User = Depends(get_current_user)):
     return current_user

@@ -11,13 +11,13 @@ export function RagProvider({children}){
     const [panelOpen, setPanelOpen] = useState(true);
     const [thinking, setThinking] = useState(false);
 
-
     const toggleSource = useCallback((id)=>{
-        setSources((prev) => prev.map((s) => (s.id === id ? {...s, checked: !s.checked}: s)));
+        setSources((prev) => prev.map((s) => (s.id === id ? {...s, checked: !Boolean(s.checked)} : s)));
     },[]);
     
-    const selectAllSources = useCallback(()=>{
-        setSources((prev) => prev.map((s) => ({...s, checked: true})));
+    const selectAllSources = useCallback((flag)=>{
+        const shouldCheck = flag === true;
+        setSources((prev) => prev.map((s) => ({...s, checked: shouldCheck})));
     },[]);
 
     const openCitation = useCallback((n)=>{

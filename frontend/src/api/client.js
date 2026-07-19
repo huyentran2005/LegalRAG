@@ -29,6 +29,11 @@ apiClient.interceptors.request.use(
     }
 );
 
+//POST /auth/register -> {token, user: {id, name, email}}
+export async function registerRequest({email, password, fullName}){
+    const {data} = await apiClient.post("/auth/register", {email, password, full_name: fullName});
+    return data;
+}
 
 // POST /auth/login -> {token, user: {id, name, email}}
 export async function loginRequest({email, password}){

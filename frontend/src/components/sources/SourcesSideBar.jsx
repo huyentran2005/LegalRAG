@@ -1,9 +1,11 @@
 import { Plus } from "lucide-react";
 import { useRag } from "../../context/RagContext";
 import SourceItem from "./SourceItem";
+import { useState } from "react";
 
 export default function SourcesSidebar() {
   const { sources, toggleSource, selectAllSources } = useRag();
+  const allSelected = sources.length > 0 && sources.every((s) => Boolean(s.checked));
 
   return (
     <aside className="w-[272px] flex-shrink-0 bg-panel border-r border-line flex flex-col">
@@ -23,8 +25,12 @@ export default function SourcesSidebar() {
       </div>
 
       <div className="px-4 py-4 border-t border-line">
-        <button onClick={selectAllSources} className="text-xs text-inksoft hover:text-ink">
-          Chọn tất cả nguồn
+        <button
+          type="button"
+          onClick={() => selectAllSources(!allSelected)}
+          className="text-xs text-inksoft hover:text-ink"
+        >
+          {allSelected ? "Bỏ chọn tất cả" : "Chọn tất cả nguồn"}
         </button>
       </div>
     </aside>
