@@ -73,8 +73,8 @@ export async function uploadSource(file){
     form.append("file", file);
     const {data} = await apiClient.post("/sources", form,{
         headers: {
-            "Content-Type": "multipart/from-data"
+            "Content-Type": "multipart/form-data"
         },
     })
+    return data;
 }
-

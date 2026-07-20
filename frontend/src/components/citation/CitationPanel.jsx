@@ -1,12 +1,11 @@
 import { X, ExternalLink } from "lucide-react";
-import { useRag } from "../../context/RagContext";
-import { fileIconFor } from "../sources/SourceItem";
+import { useRag } from "../../context/useRag";
+import { FileTypeIcon } from "../sources/fileIcons";
 
 export default function CitationPanel() {
   const { panelOpen, closePanel, activeCite, citations, sources } = useRag();
   const citation = citations[activeCite];
   const sourceMeta = citation ? sources.find((s) => s.id === citation.sourceId) : null;
-  const Icon = fileIconFor(sourceMeta?.type);
 
   return (
     <aside
@@ -27,7 +26,7 @@ export default function CitationPanel() {
         {citation && (
           <div className="p-[18px] overflow-y-auto no-scrollbar">
             <div className="flex items-center gap-1.5 mb-3.5">
-              <Icon size={15} className="text-inkfaint" />
+              <FileTypeIcon type={sourceMeta?.type} size={15} className="text-inkfaint" />
               <span className="text-[13px] font-medium">{citation.sourceName}</span>
             </div>
             <div className="font-mono text-[11px] text-inkfaint mb-3">{citation.page}</div>

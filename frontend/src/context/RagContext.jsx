@@ -1,8 +1,7 @@
-import { createContext, useContext, useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import { CITATIONS, SOURCES, INITIAL_MESSAGES } from "../data/mockData";
 import { askQuestion } from "../api/client";
-
-const RagContext = createContext(null);
+import { RagContext } from "./ragContextValue";
 
 export function RagProvider({children}){
     const [messages, setMessages] = useState(INITIAL_MESSAGES);
@@ -12,7 +11,7 @@ export function RagProvider({children}){
     const [thinking, setThinking] = useState(false);
 
     const toggleSource = useCallback((id)=>{
-        setSources((prev) => prev.map((s) => (s.id === id ? {...s, checked: !Boolean(s.checked)} : s)));
+        setSources((prev) => prev.map((s) => (s.id === id ? {...s, checked: !s.checked} : s)));
     },[]);
     
     const selectAllSources = useCallback((flag)=>{
@@ -43,7 +42,7 @@ export function RagProvider({children}){
         try{
             const data = await askQuestion({question: trimmed, sourceIds: selectedIds});
             setMessages((prev)=> [...prev, data.message]);
-        } catch (_){
+        } catch {
             const fallbackSource = sources.find((s)=>s.checked) || sources[0];
             const reply = {
                 id: `a-${Date.now()}`,
@@ -59,7 +58,7 @@ export function RagProvider({children}){
         } finally{
             setThinking(false);
         }
-    },[sources]);
+    },[sources, thinking]);
 
     const value = {
         sources,
@@ -78,12 +77,4 @@ export function RagProvider({children}){
     return <RagContext.Provider value = {value}>
         {children}
     </RagContext.Provider>
-}
-
-export function useRag(){
-    const ctx = useContext(RagContext);
-    if(!ctx){
-        throw new Error("useRag must be used within a RagProvider");
-    }
-    return ctx;
 }

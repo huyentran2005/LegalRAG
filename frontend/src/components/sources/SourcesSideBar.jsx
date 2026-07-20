@@ -1,7 +1,6 @@
 import { Plus } from "lucide-react";
-import { useRag } from "../../context/RagContext";
+import { useRag } from "../../context/useRag";
 import SourceItem from "./SourceItem";
-import { useState } from "react";
 
 export default function SourcesSidebar() {
   const { sources, toggleSource, selectAllSources } = useRag();

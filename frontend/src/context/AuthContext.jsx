@@ -1,21 +1,18 @@
-import {createContext, useContext, useState, useCallback, useEffect} from "react"
+import {useState, useCallback, useEffect} from "react"
 import { loginRequest, fetchCurrentUser, logoutRequest, registerRequest } from "../api/client"
+import { AuthContext } from "./authContextValue";
 
-const AuthContext = createContext(null);
 const TOKEN_KEY = "auth_token";
 
 export function AuthProvider({children}){
     const [user, setUser] = useState(null);
     const [token, setToken] = useState(()=> localStorage.getItem(TOKEN_KEY));
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(Boolean(token));
     const [error, setError] = useState(null);
     const [error1, setError1] = useState(null);
 
     useEffect(()=>{
-        if(!token){
-            setLoading(false);
-            return;
-        }
+        if(!token) return;
         fetchCurrentUser()
             .then((u)=>setUser(u))
             .catch(()=>{
@@ -26,10 +23,10 @@ export function AuthProvider({children}){
             .finally(()=> setLoading(false));
     },[token]);
 
-    const register = useCallback(async({email, password, fullname})=>{
+    const register = useCallback(async({email, password, fullName})=>{
         setError1(null);
         try{
-            const {token: newToken, user: newUser} = await registerRequest({email, password, fullname});
+            const {token: newToken, user: newUser} = await registerRequest({email, password, fullName});
             localStorage.setItem(TOKEN_KEY, newToken);
             setUser(newUser);
             setToken(newToken);
@@ -95,12 +92,4 @@ export function AuthProvider({children}){
     return <AuthContext.Provider value = {value}>
         {children}
     </AuthContext.Provider>
-} 
-
-export function useAuth(){
-    const ctx = useContext(AuthContext);
-    if(!ctx){
-        throw new Error("useAuth must be used within AuthProvider");
-    }
-    return ctx;
 }

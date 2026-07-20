@@ -1,14 +1,7 @@
-import { FileText, FileSpreadsheet, File as FileIcon, Check } from "lucide-react";
-
-export function fileIconFor(type) {
-  if (type === "xlsx") return FileSpreadsheet;
-  if (type === "doc") return FileIcon;
-  return FileText;
-}
+import { Check } from "lucide-react";
+import { FileTypeIcon } from "./fileIcons";
 
 export default function SourceItem({ source, onToggle }) {
-  const Icon = fileIconFor(source.type);
-
   return (
     <div
       onClick={() => onToggle(source.id)}
@@ -21,7 +14,7 @@ export default function SourceItem({ source, onToggle }) {
       >
         {source.checked && <Check size={11} strokeWidth={3} className="text-white" />}
       </div>
-      <Icon size={15} className="text-inkfaint mt-0.5 flex-shrink-0" />
+      <FileTypeIcon type={source.type} size={15} className="text-inkfaint mt-0.5 flex-shrink-0" />
       <div className="min-w-0">
         <div className="text-[13px] font-medium text-ink truncate">{source.name}</div>
         <div className="text-[11px] text-inkfaint font-mono mt-0.5">{source.meta}</div>

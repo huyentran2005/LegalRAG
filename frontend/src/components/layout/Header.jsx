@@ -1,6 +1,6 @@
 import { Sparkles, LogOut } from "lucide-react";
-import { useRag } from "../../context/RagContext";
-import { useAuth } from "../../context/AuthContext";
+import { useRag } from "../../context/useRag";
+import { useAuth } from "../../context/useAuth";
 
 export default function Header() {
   const { sources } = useRag();

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Send } from "lucide-react";
-import { useRag } from "../../context/RagContext";
+import { useRag } from "../../context/useRag";
 
 export default function Composer() {
   const { sendMessage, sources } = useRag();

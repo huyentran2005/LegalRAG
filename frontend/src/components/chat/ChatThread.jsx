@@ -1,4 +1,4 @@
-import { useRag } from "../../context/RagContext";
+import { useRag } from "../../context/useRag";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import MessageBubble from "./MessageBubble";
 import ThinkingIndicator from "./ThinkingIndicator";

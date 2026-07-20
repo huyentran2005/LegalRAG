@@ -1,4 +1,4 @@
-import { useRag } from "../../context/RagContext";
+import { useRag } from "../../context/useRag";
 import CitationChip from "./CitationChip";
 import SourcePill from "./SourcePill";
 
