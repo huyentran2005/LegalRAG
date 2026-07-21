@@ -72,6 +72,7 @@ export function AuthProvider({children}){
             );
         } finally {
             localStorage.removeItem(TOKEN_KEY);
+            localStorage.removeItem("sources");
             setToken(null);
             setUser(null);
         }

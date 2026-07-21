@@ -19,7 +19,7 @@ class DocumentChunk(Base):
 
     content: Mapped[str] = mapped_column(Text)
 
-    embedding: Mapped[list[float]] = mapped_column(Vector(1024))
+    embedding: Mapped[list[float]] = mapped_column(Vector(384))
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,

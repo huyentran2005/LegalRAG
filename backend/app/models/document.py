@@ -2,6 +2,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, Integer, DateTime,ForeignKey, Enum
 from datetime import datetime, timezone
 from enum import Enum as PyEnum
+import uuid
 from .base import Base
 
 class DocumentStatus(str, PyEnum):
@@ -21,6 +22,10 @@ class Document(Base):
 
     filename: Mapped[str] = mapped_column(String(255))
 
+    file_type: Mapped[str] = mapped_column(String(255))
+
+    page_count: Mapped[int] = mapped_column(Integer, default=0)
+
     storage_path: Mapped[str] = mapped_column(String(500))
 
     status: Mapped[DocumentStatus] = mapped_column(
@@ -30,7 +35,7 @@ class Document(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default = datetime.now(timezone.utc),
+        default = lambda: datetime.now(timezone.utc),
         nullable = False
     )
 
@@ -42,4 +47,3 @@ class Document(Base):
 
     owner = relationship("User", back_populates="documents")
     chunks = relationship("DocumentChunk", back_populates= "document")
-

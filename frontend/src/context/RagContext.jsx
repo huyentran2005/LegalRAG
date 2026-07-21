@@ -1,14 +1,27 @@
-import { useCallback, useState } from "react";
-import { CITATIONS, SOURCES, INITIAL_MESSAGES } from "../data/mockData";
-import { askQuestion } from "../api/client";
+import { useCallback, useEffect, useState } from "react";
+import { CITATIONS, INITIAL_MESSAGES } from "../data/mockData";
+import { askQuestion, fetchSources } from "../api/client";
 import { RagContext } from "./ragContextValue";
 
 export function RagProvider({children}){
     const [messages, setMessages] = useState(INITIAL_MESSAGES);
-    const [sources , setSources] = useState(SOURCES);
+    const [sources , setSources] = useState([]);
     const [activeCite , setActiveCite] = useState(1);
     const [panelOpen, setPanelOpen] = useState(true);
     const [thinking, setThinking] = useState(false);
+    const [sourcesLoading, setSourcesLoading] = useState(false);
+    const [sourcesError, setSourcesError] = useState(null);
+
+    const normalizeSource = useCallback((source) => ({
+        id: source.id ?? source.document_id,
+        documentId: source.document_id ?? source.id,
+        objectKey: source.object_key ?? source.objectKey,
+        name: source.name ?? source.filename ?? "Tài liệu",
+        meta: source.meta ?? (source.page_count ? `${source.page_count} trang` : ""),
+        type: source.type ?? source.file_type ?? "application/pdf",
+        status: typeof source.status === "string" ? source.status : source.status?.value,
+        checked: source.checked ?? true,
+    }), []);
 
     const toggleSource = useCallback((id)=>{
         setSources((prev) => prev.map((s) => (s.id === id ? {...s, checked: !s.checked} : s)));
@@ -18,6 +31,29 @@ export function RagProvider({children}){
         const shouldCheck = flag === true;
         setSources((prev) => prev.map((s) => ({...s, checked: shouldCheck})));
     },[]);
+
+    const getSource = useCallback(async()=>{
+        setSourcesLoading(true);
+        setSourcesError(null);
+        try{
+            const data = await fetchSources();
+            const normalized = Array.isArray(data) ? data.map(normalizeSource) : [];
+            setSources(normalized);
+            localStorage.setItem(
+                "sources",
+                JSON.stringify(normalized)
+            );
+        }catch(err){
+            console.error(err);
+            setSourcesError(err?.response?.data?.detail || "Không tải được danh sách nguồn dữ liệu.");
+        } finally {
+            setSourcesLoading(false);
+        }
+    },[normalizeSource]);
+
+    useEffect(() => {
+        getSource();
+    }, [getSource]);
 
     const openCitation = useCallback((n)=>{
         setActiveCite(n);
@@ -41,7 +77,13 @@ export function RagProvider({children}){
         }
         try{
             const data = await askQuestion({question: trimmed, sourceIds: selectedIds});
-            setMessages((prev)=> [...prev, data.message]);
+            const usedSources = data.sources?.map((source) => source.id) ?? selectedIds;
+            setMessages((prev)=> [...prev, {
+                id: `a-${Date.now()}`,
+                role: "assistant",
+                parts: [{text: data.answer || "Không có câu trả lời."}],
+                usedSources,
+            }]);
         } catch {
             const fallbackSource = sources.find((s)=>s.checked) || sources[0];
             const reply = {
@@ -62,6 +104,11 @@ export function RagProvider({children}){
 
     const value = {
         sources,
+        setSources,
+        normalizeSource,
+        getSource,
+        sourcesLoading,
+        sourcesError,
         toggleSource,
         selectAllSources,
         messages,

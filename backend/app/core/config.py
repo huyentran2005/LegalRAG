@@ -8,7 +8,16 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24
 
+    s3_endpoint_url: str
+    s3_access_key: str
+    s3_region: str = "us-east-1"
+    s3_secret_key: str
+    s3_bucket_name: str
+    s3_secure: bool = False
+    upload_temp_dir: str = "/tmp/legalrag"
 
+    redis_url: str
+    
     cors_origins: str = "http://localhost:5173"
 
     @property
@@ -17,4 +26,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return Settings() # type: ignore

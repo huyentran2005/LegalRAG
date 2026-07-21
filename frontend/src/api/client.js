@@ -29,6 +29,19 @@ apiClient.interceptors.request.use(
     }
 );
 
+apiClient.interceptors.response.use(
+    (response) => response,
+    (err) => {
+        if(err?.response?.status === 401){
+            localStorage.removeItem("auth_token");
+            if(window.location.pathname !== "/login"){
+                window.location.assign("/login");
+            }
+        }
+        return Promise.reject(err);
+    }
+);
+
 //POST /auth/register -> {token, user: {id, name, email}}
 export async function registerRequest({email, password, fullName}){
     const {data} = await apiClient.post("/auth/register", {email, password, full_name: fullName});
@@ -62,7 +75,7 @@ export async function askQuestion({question, sourceIds}){
 
 // GET /sources -> [{id, name, meta, type}]
 export async function fetchSources(){
-    const {data} = await apiClient.get("/sources");
+    const {data} = await apiClient.get("/sources/");
     return data;
 }
 
@@ -71,7 +84,7 @@ export async function fetchSources(){
 export async function uploadSource(file){
     const form = new FormData();
     form.append("file", file);
-    const {data} = await apiClient.post("/sources", form,{
+    const {data} = await apiClient.post("/sources/upload", form,{
         headers: {
             "Content-Type": "multipart/form-data"
         },

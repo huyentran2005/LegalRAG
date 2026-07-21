@@ -5,7 +5,7 @@ import { useAuth } from "../../context/useAuth";
 export default function Header() {
   const { sources } = useRag();
   const { user, logout } = useAuth();
-  const selectedCount = sources.filter((s) => Boolean(s.checked)).length;
+  const selectedCount = (sources ?? []).filter((s) => Boolean(s.checked)).length;
   const displayName = user?.full_name || user?.name || "";
   const initials = displayName
     ? displayName
