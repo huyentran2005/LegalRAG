@@ -1,19 +1,29 @@
-import { Check } from "lucide-react";
+import { Check, Loader2, CircleAlert } from "lucide-react";
 import { FileTypeIcon } from "./fileIcons";
 
 export default function SourceItem({ source, onToggle }) {
+
   return (
     <div
       onClick={() => onToggle(source.id)}
       className="flex items-start gap-2.5 px-2 py-2.5 rounded-lg cursor-pointer mb-0.5 hover:bg-panelhover"
     >
-      <div
-        className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 mt-0.5 border-[1.5px] ${
-          source.checked ? "bg-indigo border-indigo" : "border-inkfaint bg-transparent"
-        }`}
-      >
-        {source.checked && <Check size={11} strokeWidth={3} className="text-white" />}
-      </div>
+      {source.status === "PROCESSING" && (
+          <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+      )}
+      {source.status === "COMPLETED" && (
+          <div
+            className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 mt-0.5 border-[1.5px] ${
+              source.checked ? "bg-indigo border-indigo" : "border-inkfaint bg-transparent"
+            }`}
+          >
+            {source.checked && <Check size={11} strokeWidth={3} className="text-white" />}
+          </div>
+      )}
+      {source.status === "FAILED" && (
+          <CircleAlert className="h-4 w-4 text-red-500" />
+      )}
+      
       <FileTypeIcon type={source.type} size={15} className="text-inkfaint mt-0.5 flex-shrink-0" />
       <div className="min-w-0">
         <div className="text-[13px] font-medium text-ink truncate">{source.name}</div>

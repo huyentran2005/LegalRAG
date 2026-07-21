@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CITATIONS, INITIAL_MESSAGES } from "../data/mockData";
 import { askQuestion, fetchSources } from "../api/client";
 import { RagContext } from "./ragContextValue";
 
 export function RagProvider({children}){
+    const wsRef = useRef(null);
+    const pendingStatusRef = useRef({});
     const [messages, setMessages] = useState(INITIAL_MESSAGES);
     const [sources , setSources] = useState([]);
     const [activeCite , setActiveCite] = useState(1);
@@ -37,7 +39,13 @@ export function RagProvider({children}){
         setSourcesError(null);
         try{
             const data = await fetchSources();
-            const normalized = Array.isArray(data) ? data.map(normalizeSource) : [];
+            const normalized = Array.isArray(data)
+                ? data.map((item) => {
+                    const source = normalizeSource(item);
+                    const pendingStatus = pendingStatusRef.current[source.documentId ?? source.id];
+                    return pendingStatus ? { ...source, status: pendingStatus } : source;
+                })
+                : [];
             setSources(normalized);
             localStorage.setItem(
                 "sources",
@@ -54,6 +62,50 @@ export function RagProvider({children}){
     useEffect(() => {
         getSource();
     }, [getSource]);
+
+    useEffect(()=>{
+        const token = localStorage.getItem("auth_token");
+        if(!token) return;
+
+        function connect(){
+            const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL || "ws://localhost:8000";
+            const ws = new WebSocket(`${wsBaseUrl}/ws/documents?token=${encodeURIComponent(token)}`);
+            wsRef.current = ws;
+
+            ws.onmessage = (event) =>{
+                try {
+                    const data = JSON.parse(event.data);
+                    const documentId = data.document_id ?? data.documentId ?? data.id;
+                    const status = data.status ?? data.state;
+
+                    if (documentId == null || status == null) return;
+
+                    pendingStatusRef.current[documentId] = status;
+                    setSources((prev) =>
+                        prev.map((s) => {
+                            const sourceId = s.documentId ?? s.id;
+                            return sourceId === documentId ? { ...s, status } : s;
+                        })
+                    );
+                } catch (err) {
+                    console.error("WS payload error", err);
+                }
+            };
+
+            ws.onclose = (event)=>{
+                if(event.code === 1008){
+                    console.warn("Token không hợp lệ!, không reconnect");
+                    return ;
+                }
+                setTimeout(connect, 2000);
+            }
+
+            ws.onerror = () => ws.close();
+        }
+
+        connect();
+        return () => wsRef.current?.close();
+    },[]);
 
     const openCitation = useCallback((n)=>{
         setActiveCite(n);

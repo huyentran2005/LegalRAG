@@ -39,5 +39,5 @@ def authenticate_user(db: Session, email: str, password: str) -> tuple[User, str
     if not user.is_active:
         raise ValueError("Tài khoản bị khóa. Vui lòng liên hệ quản trị viên.")
 
-    token = create_access_token(subject= user.id)
-    return user, token
+    token = create_access_token(subject= user.id) # type: ignore
+    return user, token # type: ignore
