@@ -1,0 +1,8 @@
+services:
+  api:
+    environment:
+      LLM_DEVICE: ${LLM_DEVICE:-auto}
+    gpus: all
+
+  worker:
+    gpus: all
