@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CITATIONS, INITIAL_MESSAGES } from "../data/mockData";
 import { askQuestion, fetchSources } from "../api/client";
 import { RagContext } from "./ragContextValue";
 
 export function RagProvider({children}){
     const wsRef = useRef(null);
     const pendingStatusRef = useRef({});
-    const [messages, setMessages] = useState(INITIAL_MESSAGES);
+    const [messages, setMessages] = useState([]);
+    const [citations, setCitations] = useState({});
+    const [sessionId, setSessionId] = useState(null);
     const [sources , setSources] = useState([]);
     const [activeCite , setActiveCite] = useState(1);
     const [panelOpen, setPanelOpen] = useState(true);
@@ -24,6 +25,23 @@ export function RagProvider({children}){
         status: typeof source.status === "string" ? source.status : source.status?.value,
         checked: source.checked ?? true,
     }), []);
+
+    const normalizeCitations = useCallback((rawCitations) => {
+        if (!rawCitations || typeof rawCitations !== "object") return {};
+
+        return Object.fromEntries(
+            Object.entries(rawCitations).map(([key, citation]) => [
+                Number(key),
+                {
+                    ...citation,
+                    sourceId: Number(citation.sourceId ?? citation.source_id),
+                    sourceName: citation.sourceName ?? citation.source_name ?? "Tài liệu",
+                    page: citation.page ?? "",
+                    excerpt: citation.excerpt ?? "",
+                },
+            ])
+        );
+    }, []);
 
     const toggleSource = useCallback((id)=>{
         setSources((prev) => prev.map((s) => (s.id === id ? {...s, checked: !s.checked} : s)));
@@ -124,35 +142,49 @@ export function RagProvider({children}){
 
         const selectedIds = sources.filter((s)=> s.checked).map((s)=>s.id);
         if (selectedIds.length === 0) {
+            setMessages((prev) => [...prev, {
+                id: `a-${Date.now()}`,
+                role: "assistant",
+                parts: [{ text: "Bạn hãy chọn ít nhất một tài liệu ở bên trái trước khi hỏi nhé." }],
+                usedSources: [],
+            }]);
             setThinking(false);
             return;
         }
         try{
-            const data = await askQuestion({question: trimmed, sourceIds: selectedIds});
-            const usedSources = data.sources?.map((source) => source.id) ?? selectedIds;
+            const data = await askQuestion({question: trimmed, sourceIds: selectedIds, sessionId});
+            const usedSources = (data.usedSources ?? data.sources?.map((source) => source.id) ?? selectedIds)
+                .map((id) => Number(id));
+            const nextCitations = normalizeCitations(data.citations);
+            setSessionId(data.sessionId ?? sessionId);
+            setCitations(nextCitations);
+            const firstCitation = Number(Object.keys(nextCitations)[0]);
+            if (firstCitation) {
+                setActiveCite(firstCitation);
+            }
             setMessages((prev)=> [...prev, {
                 id: `a-${Date.now()}`,
                 role: "assistant",
-                parts: [{text: data.answer || "Không có câu trả lời."}],
+                parts: data.parts?.length ? data.parts : [{text: data.answer || "Không có câu trả lời."}],
                 usedSources,
             }]);
-        } catch {
-            const fallbackSource = sources.find((s)=>s.checked) || sources[0];
+        } catch (err) {
+            console.error(err);
+            const detail = err?.response?.data?.detail;
+            const message = Array.isArray(detail)
+                ? detail.map((item) => item.msg).join(" ")
+                : detail;
             const reply = {
                 id: `a-${Date.now()}`,
                 role: "assistant",
-                parts:[
-                    {text: "Dựa trên các nguồn bạ đã chọn, đây là điều tôi tìm thấy lien quan đến câu hỏi của bạn"},
-                    {cite: 1},
-                    {text: ". Bạn có thể mở nguồn để xem trích dẫn gốc"},
-                ],
-                usedSources: [fallbackSource.id],
+                parts: [{ text: message || "Không tạo được câu trả lời từ tài liệu lúc này. Vui lòng thử lại hoặc kiểm tra backend." }],
+                usedSources: [],
             }
             setMessages((prev)=>[...prev,reply]);
         } finally{
             setThinking(false);
         }
-    },[sources, thinking]);
+    },[sources, thinking, sessionId, normalizeCitations]);
 
     const value = {
         sources,
@@ -168,7 +200,7 @@ export function RagProvider({children}){
         thinking,
         activeCite,
         openCitation,
-        citations: CITATIONS,
+        citations,
         panelOpen,
         closePanel,
     };

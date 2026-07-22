@@ -5,7 +5,7 @@ import { FileTypeIcon } from "../sources/fileIcons";
 export default function CitationPanel() {
   const { panelOpen, closePanel, activeCite, citations, sources } = useRag();
   const citation = citations[activeCite];
-  const sourceMeta = citation ? sources.find((s) => s.id === citation.sourceId) : null;
+  const sourceMeta = citation ? sources.find((s) => Number(s.id) === Number(citation.sourceId)) : null;
 
   return (
     <aside

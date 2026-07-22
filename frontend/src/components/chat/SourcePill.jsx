@@ -3,7 +3,7 @@ import { FileTypeIcon } from "../sources/fileIcons";
 
 export default function SourcePill({ sourceId, onClick }) {
   const { sources } = useRag();
-  const src = sources.find((s) => s.id === sourceId);
+  const src = sources.find((s) => Number(s.id) === Number(sourceId));
   if (!src) return null;
 
   return (

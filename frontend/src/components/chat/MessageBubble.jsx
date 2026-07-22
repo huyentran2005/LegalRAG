@@ -22,8 +22,8 @@ export default function MessageBubble({ message }) {
           p.cite ? (
             <CitationChip
               key={i}
-              n={p.cite}
-              active={panelOpen && activeCite === p.cite}
+              n={Number(p.cite)}
+              active={panelOpen && Number(activeCite) === Number(p.cite)}
               onClick={openCitation}
             />
           ) : (
@@ -35,11 +35,12 @@ export default function MessageBubble({ message }) {
       {message.usedSources && (
         <div className="flex gap-1.5 mt-2.5 flex-wrap">
           {message.usedSources.map((sid) => {
-            const citeEntry = Object.entries(citations).find(([, c]) => c.sourceId === sid);
+            const sourceId = Number(sid);
+            const citeEntry = Object.entries(citations).find(([, c]) => Number(c.sourceId) === sourceId);
             return (
               <SourcePill
                 key={sid}
-                sourceId={sid}
+                sourceId={sourceId}
                 onClick={() => citeEntry && openCitation(Number(citeEntry[0]))}
               />
             );

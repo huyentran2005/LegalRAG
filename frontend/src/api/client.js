@@ -3,7 +3,7 @@ import axios from "axios"
 export const apiClient = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
     headers: {"Content-Type": "application/json"},
-    timeout: 20000,
+    timeout: 120000,
 });
 
 
@@ -66,9 +66,9 @@ export async function logoutRequest(){
     await apiClient.post("/auth/logout")
 }
 
-//POST /chat/ask -> {answer, citations: {answer, sourcseId, sourceName, page, excerpt }}
-export async function askQuestion({question, sourceIds}){
-    const {data} = await apiClient.post("/chat/ask",{question, sourceIds});
+// POST /chat/ask -> {sessionId, answer, parts, usedSources, citations}
+export async function askQuestion({question, sourceIds, sessionId}){
+    const {data} = await apiClient.post("/chat/ask",{question, sourceIds, sessionId});
     return data;
 }
 
