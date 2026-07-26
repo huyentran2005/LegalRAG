@@ -12,7 +12,6 @@ def get_current_user(
     token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
-    print("TOKEN =", token)
     credentials_error = HTTPException(
         status_code= status.HTTP_401_UNAUTHORIZED,
         detail = "Không thể xác minh phiên đăng nhập.",
