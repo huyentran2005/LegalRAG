@@ -62,11 +62,8 @@ services:
       S3_ENDPOINT_URL: http://minio:9000
       S3_ACCESS_KEY: ${MINIO_ROOT_USER}
       S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
-      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
-      LLM_DEVICE: ${LLM_DEVICE:-auto}
-      LLM_MODEL_NAME: ${LLM_MODEL_NAME:-Qwen/Qwen2.5-0.5B-Instruct}
-      XAI_MODEL_NAME: ${XAI_MODEL_NAME:-grok-4.3}
-      GEMINI_MODEL_NAME: ${GEMINI_MODEL_NAME:-gemini-2.0-flash}
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: qwen2.5:3b
     depends_on:
       db:
         condition: service_healthy
@@ -74,6 +71,9 @@ services:
         condition: service_started
       minio:
         condition: service_healthy
+      ollama:
+        condition: service_healthy
+
 
   worker:
     build: ./backend
@@ -110,6 +110,24 @@ services:
     depends_on:
       - api
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: legalrag-ollama
+    restart: unless-stopped
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres_data:
   minio_data:
+  ollama_data:
