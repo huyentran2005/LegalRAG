@@ -23,8 +23,8 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     except ValueError as e:
         raise HTTPException(status_code= status.HTTP_400_BAD_REQUEST, detail= str(e))
 
-    token = create_access_token(subject= user.id)
-    return TokenResponse(token= token, user= UserOut.model_validate(user))
+    token = create_access_token(subject= user.id) # type: ignore
+    return TokenResponse(token= token, user= UserOut.model_validate(user)) # type: ignore
 
 
 @router.post("/login", response_model= TokenResponse)
@@ -37,7 +37,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         )
     except ValueError as e:
         raise HTTPException(status_code= status.HTTP_401_UNAUTHORIZED, detail= str(e))
-    return TokenResponse(token= token, user= user)
+    return TokenResponse(token= token, user= user) # type: ignore
 
 @router.post("/logout")
 def logout():
