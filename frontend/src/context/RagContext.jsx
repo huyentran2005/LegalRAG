@@ -132,7 +132,7 @@ export function RagProvider({children}){
 
     const closePanel = useCallback(() => setPanelOpen(false) ,[]);
 
-    const sendMessage = useCallback(async(text)=>{
+    const sendMessage = useCallback(async(text, provider)=>{
         if (thinking) return;
         const trimmed = text.trim();
         if(!trimmed) return;
@@ -152,7 +152,7 @@ export function RagProvider({children}){
             return;
         }
         try{
-            const data = await askQuestion({question: trimmed, sourceIds: selectedIds, sessionId});
+            const data = await askQuestion({question: trimmed, sourceIds: selectedIds, sessionId, provider});
             const usedSources = (data.usedSources ?? data.sources?.map((source) => source.id) ?? selectedIds)
                 .map((id) => Number(id));
             const nextCitations = normalizeCitations(data.citations);

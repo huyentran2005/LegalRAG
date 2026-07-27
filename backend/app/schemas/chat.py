@@ -6,6 +6,7 @@ class AskRequest(BaseModel):
     question: str
     sourceIds: List[int] | None = None
     sessionId: int | None = None
+    provider: str 
 
 class SourceOut(BaseModel):
     id: int

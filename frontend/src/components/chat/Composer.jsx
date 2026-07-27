@@ -1,17 +1,36 @@
-import { useState } from "react";
-import { Send } from "lucide-react";
+import { useState, useRef ,useEffect} from "react";
+import { Send, ChevronDown, Check } from "lucide-react";
 import { useRag } from "../../context/useRag";
+
+
+const MODELS= [
+  {id: "gemini-3.5-flash", label: "Gemini 3.5"},
+  {id: "qwen2.5:3b", label:"Qwen 2.5"},
+];
 
 export default function Composer() {
   const { sendMessage, sources } = useRag();
   const [input, setInput] = useState("");
   const selectedCount = sources.filter((s) => s.checked).length;
+  const [open, setOpen] = useState(false);
+  const [model, setModel] = useState(MODELS[0]);
+  const dropdownRef = useRef(null);
 
   const handleSend = () => {
     if (!input.trim()) return;
-    sendMessage(input);
+    sendMessage(input, model.id);
     setInput("");
   };
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   return (
     <div className="border-t border-line px-6 pt-4 pb-5">
@@ -30,6 +49,33 @@ export default function Composer() {
             rows={1}
             className="flex-1 resize-none border-none outline-none bg-transparent text-sm leading-relaxed text-ink py-1.5 max-h-[120px]"
           />
+          <div className="items-center justify-between relative" ref={dropdownRef}>
+            <button
+              onClick={() => setOpen((v) => !v)}
+              className="flex items-center gap-1.5 text-xs text-inkfaint hover:text-ink bg-panel px-2.5 py-1 rounded-lg transition-colors"
+            >
+              <span>{model.label}</span>
+              <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+            </button>
+
+            {open && (
+              <div className="absolute bottom-full left-0 mb-1 w-48 bg-white border border-line rounded-[10px] shadow-lg py-1 z-10">
+                {MODELS.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      setModel(m);
+                      setOpen(false);
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-ink hover:bg-panel"
+                  >
+                    <span>{m.label}</span>
+                    {m.id === model.id && <Check size={13} className="text-indigo" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             onClick={handleSend}
             disabled={!input.trim()}

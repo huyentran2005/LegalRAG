@@ -67,8 +67,8 @@ export async function logoutRequest(){
 }
 
 // POST /chat/ask -> {sessionId, answer, parts, usedSources, citations}
-export async function askQuestion({question, sourceIds, sessionId}){
-    const {data} = await apiClient.post("/chat/ask",{question, sourceIds, sessionId});
+export async function askQuestion({question, sourceIds, sessionId, provider}){
+    const {data} = await apiClient.post("/chat/ask",{question, sourceIds, sessionId, provider});
     return data;
 }
 

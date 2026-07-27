@@ -114,7 +114,7 @@ def ask_question(request: Request, payload: AskRequest, db: Session = Depends(ge
         numbered_chunks.append(f"[đoạn {i}] {chunk.content.strip()}")
     context = "\n".join(numbered_chunks)
  
-    llm = get_llm("Qwen-2.5")
+    llm = get_llm(payload.provider)
     rag = OfficeRAG(llm)
     raw_answer = rag.answer(context, payload.question)
  
