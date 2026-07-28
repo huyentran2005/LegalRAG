@@ -41,7 +41,6 @@ export default function CitationPanel() {
               <p
                 className="font-display text-[15px] leading-relaxed text-ink m-0"
                 style={{
-                  backgroundImage: "linear-gradient(#FBF2DD, #FBF2DD)",
                   backgroundRepeat: "no-repeat",
                   backgroundSize: "100% 40%",
                   backgroundPosition: "0 65%",
@@ -51,9 +50,9 @@ export default function CitationPanel() {
               </p>
             </div>
 
-            <button className="flex items-center gap-1.5 mt-4 text-[12.5px] text-indigo border border-line rounded-lg px-3 py-2 hover:border-inkfaint">
+            {/* <button className="flex items-center gap-1.5 mt-4 text-[12.5px] text-indigo border border-line rounded-lg px-3 py-2 hover:border-inkfaint">
               <ExternalLink size={13} /> Mở tài liệu gốc
-            </button>
+            </button> */}
           </div>
         )}
       </div>
