@@ -3,7 +3,7 @@ import CitationChip from "./CitationChip";
 import SourcePill from "./SourcePill";
 
 export default function MessageBubble({ message }) {
-  const { activeCite, panelOpen, openCitation, citations } = useRag();
+  const { activeCite, panelOpen, openCitation } = useRag();
 
   if (message.role === "user") {
     return (
@@ -15,6 +15,8 @@ export default function MessageBubble({ message }) {
     );
   }
 
+  const messageCitations = message.citations || {};
+
   return (
     <div className="mb-5">
       <div className="text-[14.5px] leading-[1.7] text-ink">
@@ -23,8 +25,12 @@ export default function MessageBubble({ message }) {
             <CitationChip
               key={i}
               n={Number(p.cite)}
-              active={panelOpen && Number(activeCite) === Number(p.cite)}
-              onClick={openCitation}
+              active={
+                panelOpen &&
+                activeCite?.messageId === message.id &&
+                Number(activeCite?.index) === Number(p.cite)
+              }
+              onClick={() => openCitation(message.id, p.cite)}
             />
           ) : (
             <span key={i}>{p.text}</span>
@@ -36,12 +42,14 @@ export default function MessageBubble({ message }) {
         <div className="flex gap-1.5 mt-2.5 flex-wrap">
           {message.usedSources.map((sid) => {
             const sourceId = Number(sid);
-            const citeEntry = Object.entries(citations).find(([, c]) => Number(c.sourceId) === sourceId);
+            const citeEntry = Object.entries(messageCitations).find(
+              ([, c]) => Number(c.sourceId) === sourceId
+            );
             return (
               <SourcePill
                 key={sid}
                 sourceId={sourceId}
-                onClick={() => citeEntry && openCitation(Number(citeEntry[0]))}
+                onClick={() => citeEntry && openCitation(message.id, Number(citeEntry[0]))}
               />
             );
           })}

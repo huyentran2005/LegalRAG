@@ -73,6 +73,12 @@ export async function askQuestion({question, sourceIds, sessionId, provider}){
 }
 
 
+//GET /chat/messages
+export async function fetchMessages(){
+    const {data} = await apiClient.get("/chat/messages");
+    return data;
+}
+
 // GET /sources -> [{id, name, meta, type}]
 export async function fetchSources(){
     const {data} = await apiClient.get("/sources/");

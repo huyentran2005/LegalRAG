@@ -38,12 +38,13 @@ class AnswerResponse(BaseModel):
 
 class ChatMessageOut(BaseModel):
     id: int
+    sessionId: int
     role: Literal["user", "assistant"]
     text: str | None = None
     parts: List[MessagePart] | None = None
     usedSources: List[int] | None = None
     citations: dict[int, CitationOut] | None = None
-    created_at: str
+    createdAt: datetime
 
 class ChatSessionOut(BaseModel):
     id: int

@@ -3,9 +3,15 @@ import { useRag } from "../../context/useRag";
 import { FileTypeIcon } from "../sources/fileIcons";
 
 export default function CitationPanel() {
-  const { panelOpen, closePanel, activeCite, citations, sources } = useRag();
-  const citation = citations[activeCite];
-  const sourceMeta = citation ? sources.find((s) => Number(s.id) === Number(citation.sourceId)) : null;
+  const { panelOpen, closePanel, activeCite, messages, sources } = useRag();
+
+  const activeMessage = activeCite
+    ? messages.find((m) => m.id === activeCite.messageId)
+    : null;
+  const citation = activeMessage?.citations?.[activeCite?.index];
+  const sourceMeta = citation
+    ? sources.find((s) => Number(s.id) === Number(citation.sourceId))
+    : null;
 
   return (
     <aside

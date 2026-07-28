@@ -10,7 +10,7 @@ from app.models.document import Document, DocumentStatus
 from app.models.document_chunk import DocumentChunk
 from app.models.chat_message import ChatMessage, MessageRole
 from app.models.chat_session import ChatSession
-from app.schemas.chat import AskRequest, AnswerResponse, SourceOut
+from app.schemas.chat import AskRequest, AnswerResponse, SourceOut, ChatMessageOut
 from rag.service.answer_parser import OfficeRAG, FocusedAnswerParser
 from rag.service.llm_model import get_llm
 
@@ -213,3 +213,47 @@ def ask_question(request: Request, payload: AskRequest, db: Session = Depends(ge
         parts=parts,  # type: ignore
         usedSources=used_sources,
     )
+
+
+@router.get("/messages", response_model = list[ChatMessageOut])
+def get_all_messages(db : Session = Depends(get_db), current_user = Depends(get_current_user)):
+
+    messages = (
+        db.query(ChatMessage)
+        .join(ChatSession, ChatMessage.session_id == ChatSession.id)
+        .filter(ChatSession.user_id == current_user.id)
+        .order_by(ChatMessage.created_at.asc())
+        .all()
+    )
+
+    result: list[ChatMessageOut] = []
+    for msg in messages:
+        if msg.role == MessageRole.USER:
+            result.append(
+                ChatMessageOut(
+                    id=msg.id,
+                    sessionId=msg.session_id,
+                    role="user",
+                    text=msg.content,
+                    parts=None,
+                    citations=None,
+                    usedSources=None,
+                    createdAt=msg.created_at,
+                )
+            )
+        else:  # ASSISTANT
+            stored = msg.citations or {}
+            result.append(
+                ChatMessageOut(
+                    id=msg.id,
+                    sessionId=msg.session_id,
+                    role="assistant",
+                    text=msg.content,
+                    parts=stored.get("parts", [{"text": msg.content}]), # type: ignore
+                    citations=stored.get("citations", {}), # type: ignore
+                    usedSources=stored.get("usedSources", []), # type: ignore
+                    createdAt=msg.created_at,
+                ) 
+            )
+
+    return result
