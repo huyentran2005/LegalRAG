@@ -35,7 +35,6 @@ export default function CitationPanel() {
               <FileTypeIcon type={sourceMeta?.type} size={15} className="text-inkfaint" />
               <span className="text-[13px] font-medium">{citation.sourceName}</span>
             </div>
-            <div className="font-mono text-[11px] text-inkfaint mb-3">{citation.page}</div>
 
             <div className="relative bg-white border border-line rounded-[10px] pl-[18px] pr-4 py-4 -rotate-[0.6deg] shadow-[0_1px_0_rgba(27,29,35,0.03)]">
               <div className="absolute left-0 top-2.5 bottom-2.5 w-[3px] bg-amber rounded" />

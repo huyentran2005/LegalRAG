@@ -13,6 +13,7 @@ from app.models.chat_session import ChatSession
 from app.schemas.chat import AskRequest, AnswerResponse, SourceOut, ChatMessageOut
 from rag.service.answer_parser import OfficeRAG, FocusedAnswerParser
 from rag.service.llm_model import get_llm
+from rag.service.emb_model import embed
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 CITATION_SIMILARITY_THRESHOLD = 0.45
@@ -50,7 +51,6 @@ def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
 def _assign_citations_by_similarity(
     sentences: list[str],
     chunk_lookup: dict[int, tuple],
-    query_encoder,
     threshold: float = CITATION_SIMILARITY_THRESHOLD,
 ) -> list[tuple[str, int | None, float]]:
     """Với mỗi câu trong answer, tìm chunk nguồn (trong chunk_lookup) có
@@ -67,8 +67,8 @@ def _assign_citations_by_similarity(
  
     # Encode theo batch 1 lần duy nhất (không encode từng câu/chunk riêng lẻ
     # để tránh gọi model nhiều lần không cần thiết).
-    sentence_embeddings = query_encoder.encode(sentences, show_progress_bar=False)
-    chunk_embeddings = query_encoder.encode(chunk_texts, show_progress_bar=False)
+    sentence_embeddings = embed(sentences)
+    chunk_embeddings = embed(chunk_texts)
  
     assigned: list[tuple[str, int | None, float]] = []
     for sent, sent_emb in zip(sentences, sentence_embeddings):
@@ -88,12 +88,11 @@ def _assign_citations_by_similarity(
  
  
 @router.post("/ask", response_model=AnswerResponse)
-def ask_question(request: Request, payload: AskRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     if not payload.question:
         raise HTTPException(status_code=400, detail="Question is required")
  
-    query_encoder = request.app.state.seq
-    query_embedding = query_encoder.encode([payload.question], show_progress_bar=False)[0].tolist()
+    query_embedding = embed([payload.question])[0].tolist()
  
     results = search_similar_chunks(
         db=db,
@@ -135,7 +134,7 @@ def ask_question(request: Request, payload: AskRequest, db: Session = Depends(ge
         parts = [{"text": final_answer}]
     else:
         sentences = FocusedAnswerParser.split_sentences(raw_answer)
-        assigned = _assign_citations_by_similarity(sentences, chunk_lookup, query_encoder)
+        assigned = _assign_citations_by_similarity(sentences, chunk_lookup)
  
         final_answer = " ".join(s for s, _, _ in assigned) or raw_answer
  

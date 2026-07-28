@@ -17,15 +17,15 @@ import app.models
 
 
 settings = get_settings()
-EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+# EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ensure_bucket_exists()
-    print("Đang load model...")
-    app.state.seq = SentenceTransformer(EMBEDDING_MODEL, token = os.getenv("HF_TOKEN"))
-    print("Model đã sẵn sàng")
+    # print("Đang load model...")
+    # app.state.seq = SentenceTransformer(EMBEDDING_MODEL, token = os.getenv("HF_TOKEN"))
+    # print("Model đã sẵn sàng")
     yield
 
 

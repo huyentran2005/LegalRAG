@@ -4,7 +4,8 @@ import json
 
 from rag.service.loader import Loader
 from rag.service.split import TextSplitter
-from sentence_transformers import SentenceTransformer
+from rag.service.emb_model import embed
+# from sentence_transformers import SentenceTransformer
 from app.core.celery_app import celery_app
 from app.core.config import get_settings
 from app.database import SessionLocal
@@ -13,7 +14,7 @@ from app.models.document_chunk import DocumentChunk
 from app.services.storage_service import download_to_temp, cleanup_temp_file
 
 
-EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+# EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 settings = get_settings()
 redis_client = redis.from_url(settings.redis_url, decode_responses=True)
 
@@ -33,16 +34,17 @@ def process_uploaded_file(self, document_id: int):
         splitter = TextSplitter()
         chunks = splitter.split(pages)
 
-        encoder = SentenceTransformer(EMBEDDING_MODEL)
+        # encoder = SentenceTransformer(EMBEDDING_MODEL)
         texts = [chunk.page_content for chunk in chunks]
-        embeddings = encoder.encode(texts, show_progress_bar=False)
+        # embeddings = encoder.encode(texts, show_progress_bar=False)
+        embeddings = embed(texts)
 
         for index, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
             db.add(DocumentChunk(
                 document_id=document.id,
                 chunk_index=index,
                 content=chunk.page_content,
-                embedding=list(embedding),
+                embedding=embedding.tolist(),
             ))
 
         document.page_count = len(pages)
