@@ -1,10 +1,11 @@
-from pathlib import Path
 import redis 
 import json
 
 from rag.service.loader import Loader
-from rag.service.split import TextSplitter
 from rag.service.emb_model import embed
+from rag.service.parser import VietnameseLegalParser
+from rag.service.chunker import chunk_document
+from rag.service.enrichment import enrich_chunk_metadata
 # from sentence_transformers import SentenceTransformer
 from app.core.celery_app import celery_app
 from app.core.config import get_settings
@@ -31,19 +32,35 @@ def process_uploaded_file(self, document_id: int):
         local_path = download_to_temp(document.storage_path)
         loader = Loader()
         pages = loader.load_pdf(local_path)
-        splitter = TextSplitter()
-        chunks = splitter.split(pages)
+        full_text = "\n".join(page.page_content for page in pages)
+        law_name = document.filename.rsplit(".", 1)[0]
+        article_nodes = VietnameseLegalParser(law_name=law_name).parse_articles(full_text)
+        chunks = chunk_document(article_nodes, law_name=law_name)
+        if not chunks:
+            chunks = [{"content": full_text, "metadata": {"law": law_name}}]
+
+        enriched_chunks = [
+            {
+                **chunk,
+                "metadata": enrich_chunk_metadata(
+                    chunk["content"],
+                    chunk.get("metadata", {}),
+                ),
+            }
+            for chunk in chunks
+        ]
 
         # encoder = SentenceTransformer(EMBEDDING_MODEL)
-        texts = [chunk.page_content for chunk in chunks]
+        texts = [chunk["content"] for chunk in enriched_chunks]
         # embeddings = encoder.encode(texts, show_progress_bar=False)
         embeddings = embed(texts)
 
-        for index, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+        for index, (chunk, embedding) in enumerate(zip(enriched_chunks, embeddings)):
             db.add(DocumentChunk(
                 document_id=document.id,
                 chunk_index=index,
-                content=chunk.page_content,
+                content=chunk["content"],
+                chunk_metadata=chunk["metadata"],
                 embedding=embedding.tolist(),
             ))
 
@@ -59,7 +76,7 @@ def process_uploaded_file(self, document_id: int):
             })
         )
 
-        return {"status": "ok", "document_id": document.id, "chunks": len(chunks)}
+        return {"status": "ok", "document_id": document.id, "chunks": len(enriched_chunks)}
     except Exception:
         if "document" in locals() and document is not None:
             document.status = DocumentStatus.FAILED

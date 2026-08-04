@@ -2,6 +2,11 @@ import re
 import unicodedata
 from typing import List
 
+
+def normalize(text: str) -> str:
+    return unicodedata.normalize('NFC', text)
+
+
 def clean_vietnamese_text(text: str) -> str:
     text = unicodedata.normalize("NFC", text)
     text = "".join(
