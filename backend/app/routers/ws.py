@@ -22,7 +22,7 @@ async def document_status_ws(
         await websocket.close(code = 1008)
         return
     
-    if websocket.client_state == WebSocketState.CONNECTING:
+    if websocket.application_state == WebSocketState.CONNECTING:
         await websocket.accept()
 
     redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
@@ -31,7 +31,7 @@ async def document_status_ws(
     await pubsub.subscribe(channel)
 
     try:
-        while websocket.client_state == WebSocketState.CONNECTED:
+        while websocket.application_state == WebSocketState.CONNECTED:
             mess = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
             if not mess:
                 continue
