@@ -1,5 +1,5 @@
 from sqlalchemy.orm import  mapped_column, Mapped, relationship
-from sqlalchemy import String, Text,Integer, ForeignKey, DateTime
+from sqlalchemy import String, Text,Integer, ForeignKey, DateTime, JSON
 from datetime import datetime, timezone
 from pgvector.sqlalchemy import Vector
 
@@ -18,6 +18,8 @@ class DocumentChunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer)
 
     content: Mapped[str] = mapped_column(Text)
+
+    chunk_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
     embedding: Mapped[list[float]] = mapped_column(Vector(384))
 

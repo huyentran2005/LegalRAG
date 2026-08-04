@@ -48,6 +48,12 @@ with engine.begin() as conn:
 
 Base.metadata.create_all(bind=engine)
 
+with engine.begin() as conn:
+    conn.execute(text(
+        "ALTER TABLE document_chunks "
+        "ADD COLUMN IF NOT EXISTS chunk_metadata JSON DEFAULT '{}' NOT NULL"
+    ))
+
 
 @app.get("/")
 def healthy_check():
