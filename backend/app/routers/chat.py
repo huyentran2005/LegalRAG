@@ -1,8 +1,9 @@
 import numpy as np
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 import re
+import json
 
 from app.api.deps import get_current_user
 from app.database import get_db
@@ -17,28 +18,86 @@ from rag.service.emb_model import embed
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 CITATION_SIMILARITY_THRESHOLD = 0.45
+HYBRID_POOL_SIZE = 80
+RRF_K = 60
+
+
+_TOKEN_RE = re.compile(r"[0-9A-Za-zÀ-Ỵà-ỵĐđ]+")
+
+
+def _search_tokens(text: str) -> list[str]:
+    return [token.lower() for token in _TOKEN_RE.findall(text) if len(token) > 1]
+
+
+def _metadata_text(metadata: dict | None) -> str:
+    if not metadata:
+        return ""
+    return json.dumps(metadata, ensure_ascii=False)
+
+
+def _lexical_score(query: str, chunk: DocumentChunk) -> float:
+    query_tokens = _search_tokens(query)
+    if not query_tokens:
+        return 0.0
+
+    searchable = f"{chunk.content} {_metadata_text(chunk.chunk_metadata)}".lower()
+    score = 0.0
+    for token in query_tokens:
+        occurrences = searchable.count(token)
+        if occurrences:
+            score += 1.0 + min(occurrences, 5) * 0.2
+
+    phrase = query.strip().lower()
+    if phrase and phrase in searchable:
+        score += 3.0
+    return score
  
  
 def search_similar_chunks(
     db: Session,
+    query: str,
     query_embedding: list[float],
     owner_id: int,
     k: int = 8,
     source_ids: list[int] | None = None,
 ) -> list:
-    """Truy vấn k chunk có vector embedding gần nhất (cosine distance)
-    thuộc tài liệu của owner_id, đã COMPLETED, tùy chọn lọc theo source_ids."""
-    stmt = (
+    """Hybrid retrieval: vector similarity + lexical match trên content/metadata."""
+    base_stmt = (
         select(DocumentChunk, Document)
         .join(Document, DocumentChunk.document_id == Document.id)
         .where(Document.owner_id == owner_id)
         .where(Document.status == DocumentStatus.COMPLETED)
     )
     if source_ids:
-        stmt = stmt.where(DocumentChunk.document_id.in_(source_ids))
- 
-    stmt = stmt.order_by(DocumentChunk.embedding.cosine_distance(query_embedding)).limit(k)
-    return list(db.execute(stmt).all())
+        base_stmt = base_stmt.where(DocumentChunk.document_id.in_(source_ids))
+
+    vector_rows = list(db.execute(
+        base_stmt
+        .order_by(DocumentChunk.embedding.cosine_distance(query_embedding))
+        .limit(max(k, HYBRID_POOL_SIZE))
+    ).all())
+
+    candidate_rows = list(db.execute(base_stmt.limit(1000)).all())
+    lexical_rows = sorted(
+        ((row, _lexical_score(query, row[0])) for row in candidate_rows),
+        key=lambda item: item[1],
+        reverse=True,
+    )
+    lexical_rows = [row for row, score in lexical_rows[:HYBRID_POOL_SIZE] if score > 0]
+
+    fused: dict[int, dict] = {}
+    for rank, row in enumerate(vector_rows, start=1):
+        chunk = row[0]
+        fused.setdefault(chunk.id, {"row": row, "score": 0.0})
+        fused[chunk.id]["score"] += 1.0 / (RRF_K + rank)
+
+    for rank, row in enumerate(lexical_rows, start=1):
+        chunk = row[0]
+        fused.setdefault(chunk.id, {"row": row, "score": 0.0})
+        fused[chunk.id]["score"] += 1.0 / (RRF_K + rank)
+
+    ranked = sorted(fused.values(), key=lambda item: item["score"], reverse=True)
+    return [item["row"] for item in ranked[:k]]
  
  
 def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
@@ -96,6 +155,7 @@ def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_us
  
     results = search_similar_chunks(
         db=db,
+        query=payload.question,
         query_embedding=query_embedding,
         owner_id=current_user.id,
         k=8,
