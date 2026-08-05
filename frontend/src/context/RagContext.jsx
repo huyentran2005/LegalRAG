@@ -160,8 +160,8 @@ export function RagProvider({children}){
         setSessionId(nextSessionId);
     }, [thinking]);
 
-    const startNewSession = useCallback(async () => {
-        const session = normalizeSession(await createSession());
+    const startNewSession = useCallback(async (title) => {
+        const session = normalizeSession(await createSession(title));
         setSessions((prev) => [session, ...prev]);
         setSessionId(session.id);
         setMessages([]);

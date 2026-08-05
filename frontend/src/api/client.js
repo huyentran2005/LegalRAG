@@ -77,8 +77,8 @@ export async function fetchSessions(){
     return data;
 }
 
-export async function createSession(){
-    const {data} = await apiClient.post("/chat/sessions");
+export async function createSession(title){
+    const {data} = await apiClient.post("/chat/sessions", {title,});
     return data;
 }
 

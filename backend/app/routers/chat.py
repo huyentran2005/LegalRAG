@@ -13,6 +13,7 @@ from app.models.document_chunk import DocumentChunk
 from app.models.chat_message import ChatMessage, MessageRole
 from app.models.chat_session import ChatSession
 from app.schemas.chat import AskRequest, AnswerResponse, SourceOut, ChatMessageOut
+from app.schemas.sessions import CreateSessionRequest
 from rag.service.answer_parser import OfficeRAG, FocusedAnswerParser
 from rag.service.llm_model import get_llm
 from rag.service.emb_model import embed
@@ -281,8 +282,8 @@ def _session_payload(session: ChatSession, document_count: int = 0) -> dict:
 
 
 @router.post("/sessions")
-def create_chat_session(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    session = ChatSession(user_id=current_user.id, title="Cuộc chat mới")
+def create_chat_session(payload: CreateSessionRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    session = ChatSession(user_id=current_user.id, title=payload.title or "Cuộc chat mới")
     db.add(session)
     db.commit()
     db.refresh(session)

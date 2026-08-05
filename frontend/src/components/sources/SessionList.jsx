@@ -1,8 +1,11 @@
 import { MessageSquare, Plus } from "lucide-react";
 import { useRag } from "../../context/useRag";
+import { useState } from "react";
 
 export default function SessionList() {
   const { sessions, sessionsLoading, sessionId, selectSession, startNewSession } = useRag();
+  const [title, setTitle] = useState("Untitled");
+  const[showModal, setShowModal] = useState(false);
 
   return (
     <div className="border-b border-line">
@@ -12,13 +15,54 @@ export default function SessionList() {
         </span>
         <button
           type="button"
-          onClick={startNewSession}
+          onClick={() => setShowModal(true)}
           className="p-1 rounded-md text-indigo hover:bg-panel"
           title="Tạo cuộc chat"
         >
           <Plus size={15} />
         </button>
       </div>
+     {showModal && (
+          <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+              <div className="w-96 rounded-xl bg-white p-5 shadow-xl">
+                  <h2 className="text-lg font-semibold text-ink">
+                      Tạo cuộc trò chuyện
+                  </h2>
+
+                  <input
+                      autoFocus
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="Nhập tiêu đề..."
+                      className="mt-4 w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-indigo"
+                  />
+
+                  <div className="mt-5 flex justify-end gap-2">
+                      <button
+                          onClick={() => {
+                              setShowModal(false);
+                              setTitle("");
+                          }}
+                          className="px-3 py-1.5 text-sm rounded-lg text-inksoft hover:bg-panel"
+                      >
+                          Hủy
+                      </button>
+
+                      <button
+                          onClick={async () => {
+                              await startNewSession(title);
+                              setShowModal(false);
+                              setTitle("");
+                          }}
+                          disabled={!title.trim()}
+                          className="px-3 py-1.5 text-sm rounded-lg bg-indigo text-white hover:opacity-90 disabled:bg-panel disabled:text-inkfaint"
+                      >
+                          Tạo
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
 
       <div className="max-h-[220px] overflow-y-auto px-2.5 pb-2 no-scrollbar">
         {sessionsLoading && (
