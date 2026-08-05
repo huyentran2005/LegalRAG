@@ -18,10 +18,12 @@ def _env_int(name: str, default: int) -> int:
 
 
 def get_llm(provider: str = "gemini-2.5-flash"):
-    if provider == "gemini-3.5-flash":
+    if provider and provider.startswith("gemini"):
+        if not os.getenv("GEMINI_API"):
+            raise RuntimeError("GEMINI_API is required for Gemini provider.")
         llm = ChatGoogleGenerativeAI(
             temperature = 0.2,
-            model = "gemini-3.5-flash",
+            model = os.getenv("GEMINI_MODEL", provider),
             google_api_key = os.getenv("GEMINI_API")
         )
     else:

@@ -66,9 +66,6 @@ class OfficeRAG:
 
         Hãy trả lời dựa trên tài liệu. Nếu tài liệu không có thông tin, nói rõ "Không có
         thông tin nào."
-        Nếu câu hỏi tiếp nối lịch sử hội thoại ở trên (VD dùng "nó", "cái đó", hỏi tiếp về
-        điều/khoản vừa nhắc), hãy trả lời đúng mạch, không hỏi lại
-        người dùng điều đã rõ trong lịch sử.
         Trả lời đầy đủ thông tin (3-5 câu chi tiết), không thêm bất kỳ thông tin nào ngoài
         tài liệu.
         [TRẢ LỜI]:
@@ -86,7 +83,7 @@ class OfficeRAG:
         return "[LỊCH SỬ HỘI THOẠI GẦN ĐÂY]:\n" + "\n".join(lines) + "\n"
 
 
-    def answer(self, context: str, question: str, history: list[dict]) -> dict:
+    def answer(self, context: str, question: str, history: list[dict] | None = None) -> dict:
         """Dùng khi context đã được build sẵn từ bên ngoài (ví dụ endpoint
         tự query DB và đánh số [đoạn i]). Trả về RAW text (chỉ bóc phần
         sau [TRẢ LỜI]:), KHÔNG cắt/nối câu, để giữ nguyên câu gốc cho
@@ -102,7 +99,6 @@ class OfficeRAG:
 
         prompt_tokens = 0
         completion_tokens = 0
-
         # Gemini
         if getattr(raw, "usage_metadata", None):
             usage = raw.usage_metadata
