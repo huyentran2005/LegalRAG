@@ -64,6 +64,11 @@ with engine.begin() as conn:
     ))
 
     conn.execute(text(
+        "ALTER TABLE documents "
+        "ADD COLUMN IF NOT EXISTS session_id INTEGER REFERENCES chat_sessions(id)"
+    ))
+
+    conn.execute(text(
             "ALTER TABLE chat_messages "
             "ADD COLUMN IF NOT EXISTS token INTEGER DEFAULT 0"
     ))

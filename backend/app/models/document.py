@@ -20,6 +20,11 @@ class Document(Base):
         nullable= False
     )
 
+    session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chat_sessions.id"),
+        nullable=True,
+    )
+
     filename: Mapped[str] = mapped_column(String(255))
 
     file_type: Mapped[str] = mapped_column(String(255))
