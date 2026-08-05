@@ -1,7 +1,10 @@
 import logging
+from io import BytesIO
+from urllib.parse import urlparse
 
 from botocore.exceptions import BotoCoreError, ClientError
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
+import httpx
+from fastapi import APIRouter, UploadFile, File, Depends, Form, HTTPException, Query, status
 from kombu.exceptions import KombuError
 from sqlalchemy.orm import Session
 from pypdf import PdfReader
@@ -10,6 +13,7 @@ from pypdf.errors import PdfReadError
 from app.api.deps import get_current_user
 from app.database import get_db
 from app.models.document import Document, DocumentStatus
+from app.models.chat_session import ChatSession
 from app.services.storage_service import upload_file
 from app.workers.tasks import process_uploaded_file
 
@@ -17,14 +21,75 @@ from app.workers.tasks import process_uploaded_file
 router = APIRouter(prefix="/sources", tags=["sources"])
 logger = logging.getLogger(__name__)
 
+
+def _validate_session(session_id: int | None, db: Session, user_id: int) -> int | None:
+    if session_id is None:
+        return None
+    session = db.get(ChatSession, session_id)
+    if not session or session.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+    return session_id
+
+
+def _source_payload(document: Document, checked: bool = True) -> dict:
+    return {
+        "document_id": document.id,
+        "session_id": document.session_id,
+        "object_key": document.storage_path,
+        "name": document.filename,
+        "meta": f"{document.page_count} trang",
+        "type": document.file_type,
+        "status": document.status.value,
+        "checked": checked,
+    }
+
 @router.post("/upload")
 async def upload_file_endpoint(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
+    url: str | None = Form(None),
+    sessionId: int | None = Form(None),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    filename = file.filename or "uploaded.pdf"
-    content_type = file.content_type or "application/octet-stream"
+    session_id = _validate_session(sessionId, db, current_user.id)
+
+    if not file and not url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bạn cần chọn file PDF hoặc nhập link PDF.",
+        )
+
+    if file and url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Chỉ upload một nguồn mỗi lần: file hoặc link.",
+        )
+
+    if url:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Link tài liệu phải bắt đầu bằng http hoặc https.",
+            )
+        try:
+            response = httpx.get(url, follow_redirects=True, timeout=30.0)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Không tải được tài liệu từ link này.",
+            ) from exc
+
+        filename = parsed.path.rsplit("/", 1)[-1] or "linked-document.pdf"
+        if not filename.lower().endswith(".pdf"):
+            filename = f"{filename}.pdf"
+        content_type = response.headers.get("content-type", "application/pdf").split(";")[0]
+        file_obj = BytesIO(response.content)
+    else:
+        filename = file.filename or "uploaded.pdf"  # type: ignore[union-attr]
+        content_type = file.content_type or "application/octet-stream"  # type: ignore[union-attr]
+        file_obj = file.file  # type: ignore[union-attr]
 
     if content_type != "application/pdf" and not filename.lower().endswith(".pdf"):
         raise HTTPException(
@@ -33,7 +98,7 @@ async def upload_file_endpoint(
         )
 
     try:
-        reader = PdfReader(file.file)
+        reader = PdfReader(file_obj)
         page_count = len(reader.pages)
     except (PdfReadError, ValueError) as exc:
         raise HTTPException(
@@ -42,7 +107,7 @@ async def upload_file_endpoint(
         ) from exc
 
     try:
-        object_key = upload_file(file.file, filename)
+        object_key = upload_file(file_obj, filename)
     except (BotoCoreError, ClientError, OSError) as exc:
         logger.exception("Failed to upload source to object storage")
         raise HTTPException(
@@ -52,6 +117,7 @@ async def upload_file_endpoint(
 
     document = Document(
         owner_id=current_user.id,
+        session_id=session_id,
         filename=filename,
         page_count=page_count,
         file_type=content_type,
@@ -70,23 +136,21 @@ async def upload_file_endpoint(
     except KombuError:
         logger.exception("Failed to enqueue source processing task")
 
-    return {
-        "document_id": document.id,
-        "object_key": object_key,
-        "name": document.filename,
-        "meta": f"{document.page_count} trang",
-        "type": document.file_type,
-        "status": document.status.value,
-        "checked": True,
-    }
+    return _source_payload(document)
 
 @router.get("/")
 async def get_file(
+    sessionId: int | None = Query(None),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    sources = (db.query(Document)
-                .filter(Document.owner_id == current_user.id)
+    query = db.query(Document).filter(Document.owner_id == current_user.id)
+    if sessionId is not None:
+        _validate_session(sessionId, db, current_user.id)
+        query = query.filter(Document.session_id == sessionId)
+
+    sources = (query
+                .order_by(Document.created_at.desc())
                 .all()
     )
 
@@ -96,15 +160,7 @@ async def get_file(
         return []
     
     for s in sources:
-        result.append({
-            "document_id": s.id,
-            "object_key": s.storage_path,
-            "name": s.filename,
-            "meta": f"{s.page_count} trang",
-            "type": s.file_type,
-            "status": s.status.value,
-            "checked": True
-        })
+        result.append(_source_payload(s))
 
     return result
     

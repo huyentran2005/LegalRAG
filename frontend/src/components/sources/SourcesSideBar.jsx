@@ -1,13 +1,15 @@
 import { useRag } from "../../context/useRag";
 import SourceItem from "./SourceItem";
 import UploadButton from "../chat/UploadButton";
+import SessionList from "./SessionList";
 
 export default function SourcesSidebar() {
-  const { sources, sourcesLoading, sourcesError, toggleSource, selectAllSources } = useRag();
+  const { sources, sourcesLoading, sourcesError, toggleSource, selectAllSources, sessionId } = useRag();
   const allSelected = sources.length > 0 && sources.every((s) => Boolean(s.checked));
 
   return (
     <aside className="w-[272px] flex-shrink-0 bg-panel border-r border-line flex flex-col">
+      <SessionList />
       <div className="px-4 pt-4 pb-2.5 flex items-center justify-between">
         <span className="text-[12.5px] font-semibold tracking-wide text-inksoft uppercase">
           Nguồn tài liệu
@@ -22,7 +24,10 @@ export default function SourcesSidebar() {
         {sourcesError && (
           <div className="px-2 py-2 text-xs text-[#A32D2D]">{sourcesError}</div>
         )}
-        {!sourcesLoading && !sourcesError && sources.length === 0 && (
+        {!sessionId && !sourcesLoading && !sourcesError && (
+          <div className="px-2 py-2 text-xs text-inkfaint">Tạo hoặc chọn một cuộc chat.</div>
+        )}
+        {sessionId && !sourcesLoading && !sourcesError && sources.length === 0 && (
           <div className="px-2 py-2 text-xs text-inkfaint">Chưa có nguồn dữ liệu.</div>
         )}
         {sources.map((s) => (

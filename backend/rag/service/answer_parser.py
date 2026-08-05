@@ -56,27 +56,44 @@ class OfficeRAG:
     def __init__(self, llm):
         self.llm = llm
         self.prompt = PromptTemplate.from_template("""
-      Bạn là trợ lý AI phân tích tài liệu tiếng việt.
-      [TÀI LIỆU]:
-      {context}
+        Bạn là trợ lý AI phân tích tài liệu tiếng việt.
+        {history_block}
+        [TÀI LIỆU]:
+        {context}
 
-      [CÂU HỎI]:
-      {question}
+        [CÂU HỎI]:
+        {question}
 
-      Hãy trả lời dựa trên tài liệu. Nếu tài liệu không có thông tin, nói rõ "Không có
-      thông tin nào."
-      Trả lời đầy đủ thông tin (3-5 câu chi tiết), không thêm bất kỳ thông tin nào ngoài
-      tài liệu.
-      [TRẢ LỜI]:
+        Hãy trả lời dựa trên tài liệu. Nếu tài liệu không có thông tin, nói rõ "Không có
+        thông tin nào."
+        Nếu câu hỏi tiếp nối lịch sử hội thoại ở trên (VD dùng "nó", "cái đó", hỏi tiếp về
+        điều/khoản vừa nhắc), hãy trả lời đúng mạch, không hỏi lại
+        người dùng điều đã rõ trong lịch sử.
+        Trả lời đầy đủ thông tin (3-5 câu chi tiết), không thêm bất kỳ thông tin nào ngoài
+        tài liệu.
+        [TRẢ LỜI]:
     """)
         self.answer_parser = FocusedAnswerParser()
 
-    def answer(self, context: str, question: str) -> dict:
+    @staticmethod
+    def _format_history(history: list[dict] | None) -> str:
+        if not history:
+            return ""
+        lines = []
+        for turn in history:
+            speaker = "Người dùng" if turn.get("role") == "user" else "Trợ lý"
+            lines.append(f"{speaker}: {turn.get('content','')}")
+        return "[LỊCH SỬ HỘI THOẠI GẦN ĐÂY]:\n" + "\n".join(lines) + "\n"
+
+
+    def answer(self, context: str, question: str, history: list[dict]) -> dict:
         """Dùng khi context đã được build sẵn từ bên ngoài (ví dụ endpoint
         tự query DB và đánh số [đoạn i]). Trả về RAW text (chỉ bóc phần
         sau [TRẢ LỜI]:), KHÔNG cắt/nối câu, để giữ nguyên câu gốc cho
         bước gán citation theo câu ở endpoint."""
-        formatted_prompt = self.prompt.format(context=context, question=question)
+
+        history_block = self._format_history(history) # type: ignore
+        formatted_prompt = self.prompt.format(context=context, question=question, history_block= history_block)
         raw = self.llm.invoke(formatted_prompt)
         text = self._extract_text(raw)
 
@@ -148,7 +165,11 @@ class OfficeRAG:
             return "\n".join(formatted)
 
         rag_chain = (
-            {"context": retriever | RunnableLambda(format_docs), "question": RunnablePassthrough()}
+            {
+                "context": retriever | RunnableLambda(format_docs),
+                "question": RunnablePassthrough(),
+                "history_block": RunnableLambda(lambda _: ""),
+            }
             | self.prompt
             | self.llm
             | self.answer_parser

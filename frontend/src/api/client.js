@@ -72,6 +72,20 @@ export async function askQuestion({question, sourceIds, sessionId, provider}){
     return data;
 }
 
+export async function fetchSessions(){
+    const {data} = await apiClient.get("/chat/sessions");
+    return data;
+}
+
+export async function createSession(){
+    const {data} = await apiClient.post("/chat/sessions");
+    return data;
+}
+
+export async function fetchSessionMessages(sessionId){
+    const {data} = await apiClient.get(`/chat/sessions/${sessionId}/messages`);
+    return data;
+}
 
 //GET /chat/messages
 export async function fetchMessages(){
@@ -80,16 +94,18 @@ export async function fetchMessages(){
 }
 
 // GET /sources -> [{id, name, meta, type}]
-export async function fetchSources(){
-    const {data} = await apiClient.get("/sources/");
+export async function fetchSources(sessionId){
+    const {data} = await apiClient.get("/sources/", {params: sessionId ? {sessionId} : {}});
     return data;
 }
 
 
 // POST /sources (multipart/from-data) -> upload source metadata
-export async function uploadSource(file){
+export async function uploadSource({file, url, sessionId}){
     const form = new FormData();
-    form.append("file", file);
+    if (file) form.append("file", file);
+    if (url) form.append("url", url);
+    if (sessionId) form.append("sessionId", sessionId);
     const {data} = await apiClient.post("/sources/upload", form,{
         headers: {
             "Content-Type": "multipart/form-data"

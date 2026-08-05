@@ -2,7 +2,7 @@ import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
 import httpx
 from sqlalchemy.orm import Session
-from sqlalchemy import Text, cast, func, literal, select
+from sqlalchemy import Text, and_, cast, desc, func, literal, select
 import re
 import os
 
@@ -23,6 +23,9 @@ HYBRID_POOL_SIZE = 80
 RRF_K = 60
 DEFAULT_CHUNK_CHAR_LIMIT = 900
 DEFAULT_OLLAMA_RESULT_LIMIT = 5
+MAX_REFERENCE_CHUNKS = 10
+MAX_HISTORY_TURNS = 6
+
 
 
 def _env_int(name: str, default: int) -> int:
@@ -143,12 +146,203 @@ def _assign_citations_by_similarity(
             assigned.append((sent, best_idx, best_score))
  
     return assigned
- 
+
+def _expand_with_reference(
+    db: Session,
+    results: list,
+    owner_id: int,
+    source_ids: list[int] | None = None,
+    max_refs: int = MAX_REFERENCE_CHUNKS,
+) -> list:
+    """
+    Voi moi chunk da chon o top-k, doc metadata['references'] (do buoc
+    enrichment luc ingest sinh ra) va lay them cac Dieu/Khoan duoc tham
+    chieu toi, neu co trong luat va chua co san trong top-k.
+    """
+    existing_ids = {row[0].id for row in results}
+    seen_refs: set[tuple]= set()
+    ref_targets: list[dict] = []
+
+    for chunk, _document in results:
+        refs = ( chunk.chunk_metadata or {}).get("references", [])
+        for ref in refs:
+            article = ref.get("article")
+            if not article:
+                continue
+            key = (article, ref.get("clause"))
+            if key in seen_refs:
+                continue
+            seen_refs.add(key)
+            ref_targets.append(ref)
+
+    if not ref_targets:
+        return []
+    ref_targets= ref_targets[:max_refs]
+    base_stmt = (
+        select(DocumentChunk, Document)
+        .join(Document, DocumentChunk.document_id == Document.id)
+        .where(Document.owner_id == owner_id)
+        .where(Document.status == DocumentStatus.COMPLETED)
+    )
+
+    if source_ids:
+        base_stmt = base_stmt.where(DocumentChunk.document_id.in_(source_ids))
+
+    reference_rows: list = []
+    for ref in ref_targets:
+        stmt = base_stmt.where(
+            DocumentChunk.chunk_metadata.op("->>")("article") == ref["article"]
+        )
+
+        if ref.get("clause"):
+            stmt = stmt.where(
+                DocumentChunk.chunk_metadata.op("->>")("clause") == ref["clause"]
+            )
+
+        rows = list(db.execute(stmt).all())
+        for row in rows:
+            if row[0].id not in existing_ids:
+                reference_rows.append(row)
+                existing_ids.add(row[0].id)
+
+    return reference_rows
+
+
+def _load_conversation_memory(
+        db: Session,
+        session_id,
+        owner_id: int,
+        max_turns: int = MAX_HISTORY_TURNS,
+) -> list[dict]:
+    """
+    Lay N luot hoi thoai gan nhat cua session, dung lam "tri nho" ngan han
+    cho cau hoi tiep theo. JOIN qua ChatSession de xac nhan session thuoc
+    dung owner_id - tranh load nham lich su cua user khac du chi thoang qua.
+    """
+    if session_id is None:
+         return []
+
+    rows= (
+        db.query(ChatMessage)
+        .join(ChatSession, ChatMessage.session_id == ChatSession.id)
+        .filter(ChatMessage.session_id == session_id)
+        .filter(ChatSession.user_id == owner_id)
+        .order_by(ChatMessage.created_at.desc())
+        .limit(max_turns * 2)
+        .all()
+    )
+    rows.reverse()
+    return [{"role": msg.role.value, "content": msg.content} for msg in rows]
+
+def _contextualize_query(llm, memory: list[dict], current_question: str) :
+    """
+    Neu co lich su hoi thoai, viet lai cau hoi hien tai thanh 1 cau hoi doc
+    lap chua du ngu canh, dung de SEARCH (vector + FTS) - KHONG dung cau
+    hoi tho neu no phu thuoc ngu canh truoc (VD "Khoan 2 thi sao?" ->
+    "Khoan 2 cua Dieu 40 quy dinh gi?"). Khong anh huong cau hoi goc hien
+    thi cho user hay luu DB - chi dung noi bo cho buoc search.
+    """
+    pass
+def _message_out(msg: ChatMessage) -> ChatMessageOut:
+    if msg.role == MessageRole.USER:
+        return ChatMessageOut(
+            id=msg.id,
+            sessionId=msg.session_id,
+            role="user",
+            text=msg.content,
+            parts=None,
+            citations=None,
+            usedSources=None,
+            createdAt=msg.created_at,
+            token=0,
+        )
+
+    stored = msg.citations or {}
+    return ChatMessageOut(
+        id=msg.id,
+        sessionId=msg.session_id,
+        role="assistant",
+        text=msg.content,
+        parts=stored.get("parts", [{"text": msg.content}]), # type: ignore
+        citations=stored.get("citations", {}), # type: ignore
+        usedSources=stored.get("usedSources", []), # type: ignore
+        createdAt=msg.created_at,
+        token=msg.token,
+    )
+
+
+def _session_payload(session: ChatSession, document_count: int = 0) -> dict:
+    return {
+        "id": session.id,
+        "title": session.title,
+        "createdAt": session.created_at,
+        "documentCount": document_count,
+    }
+
+
+@router.post("/sessions")
+def create_chat_session(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    session = ChatSession(user_id=current_user.id, title="Cuộc chat mới")
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return _session_payload(session)
+
+
+@router.get("/sessions")
+def get_chat_sessions(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    rows = (
+        db.query(ChatSession, func.count(Document.id).label("document_count"))
+        .outerjoin(
+            Document,
+            and_(
+                Document.session_id == ChatSession.id,
+                Document.owner_id == current_user.id,
+            ),
+        )
+        .filter(ChatSession.user_id == current_user.id)
+        .group_by(ChatSession.id)
+        .order_by(desc(ChatSession.created_at))
+        .all()
+    )
+    return [_session_payload(session, document_count) for session, document_count in rows]
+
+
+@router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageOut])
+def get_session_messages(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    session = db.get(ChatSession, session_id)
+    if not session or session.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+
+    messages = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.session_id == session_id)
+        .order_by(ChatMessage.created_at.asc())
+        .all()
+    )
+    return [_message_out(msg) for msg in messages]
  
 @router.post("/ask", response_model=AnswerResponse)
 def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     if not payload.question:
         raise HTTPException(status_code=400, detail="Question is required")
+
+    session = None
+    if payload.sessionId:
+        session = db.get(ChatSession, payload.sessionId)
+        if not session or session.user_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+    else:
+        session = ChatSession(
+            user_id=current_user.id,
+            title=payload.question[:255],
+        )
+        db.add(session)
+        db.flush()
  
     query_embedding = embed([payload.question])[0].tolist()
  
@@ -185,8 +379,9 @@ def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_us
  
     llm = get_llm(payload.provider)
     rag = OfficeRAG(llm)
+    history = _load_conversation_memory(db, session.id, current_user.id)
     try:
-        ans = rag.answer(context, payload.question)
+        ans = rag.answer(context, payload.question, history) 
     except httpx.TimeoutException as exc:
         raise HTTPException(
             status_code=504,
@@ -248,18 +443,14 @@ def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_us
             )
             parts = [{"text": final_answer}]
  
-    session = None
-    if payload.sessionId:
-        session = db.get(ChatSession, payload.sessionId)
-        if not session or session.user_id != current_user.id:
-            raise HTTPException(status_code=404, detail="Chat session not found")
-    else:
-        session = ChatSession(
-            user_id=current_user.id,
-            title=payload.question[:255],
+    if payload.sourceIds:
+        (
+            db.query(Document)
+            .filter(Document.owner_id == current_user.id)
+            .filter(Document.id.in_(payload.sourceIds))
+            .filter(Document.session_id.is_(None))
+            .update({Document.session_id: session.id}, synchronize_session=False)
         )
-        db.add(session)
-        db.flush()
  
     db.add(ChatMessage(
         session_id=session.id,
@@ -310,34 +501,6 @@ def get_all_messages(db : Session = Depends(get_db), current_user = Depends(get_
 
     result: list[ChatMessageOut] = []
     for msg in messages:
-        if msg.role == MessageRole.USER:
-            result.append(
-                ChatMessageOut(
-                    id=msg.id,
-                    sessionId=msg.session_id,
-                    role="user",
-                    text=msg.content,
-                    parts=None,
-                    citations=None,
-                    usedSources=None,
-                    createdAt=msg.created_at,
-                    token =0,
-                )
-            )
-        else:  # ASSISTANT
-            stored = msg.citations or {}
-            result.append(
-                ChatMessageOut(
-                    id=msg.id,
-                    sessionId=msg.session_id,
-                    role="assistant",
-                    text=msg.content,
-                    parts=stored.get("parts", [{"text": msg.content}]), # type: ignore
-                    citations=stored.get("citations", {}), # type: ignore
-                    usedSources=stored.get("usedSources", []), # type: ignore
-                    createdAt=msg.created_at,
-                    token = msg.token,
-                ) 
-            )
+        result.append(_message_out(msg))
 
     return result

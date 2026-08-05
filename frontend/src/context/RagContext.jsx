@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { askQuestion, fetchSources , fetchMessages} from "../api/client";
+import {
+    askQuestion,
+    createSession,
+    fetchSessionMessages,
+    fetchSessions,
+    fetchSources,
+} from "../api/client";
 import { RagContext } from "./ragContextValue";
 import {useAuth} from "./useAuth"
 
@@ -9,6 +15,8 @@ export function RagProvider({children}){
     const pendingStatusRef = useRef({});
     const [messages, setMessages] = useState([]);
     const [sessionId, setSessionId] = useState(null);
+    const [sessions, setSessions] = useState([]);
+    const [sessionsLoading, setSessionsLoading] = useState(false);
     const [sources , setSources] = useState([]);
     const [activeCite , setActiveCite] = useState(null);
     const [panelOpen, setPanelOpen] = useState(true);
@@ -28,6 +36,13 @@ export function RagProvider({children}){
         checked: source.checked ?? true,
     }), []);
 
+    const normalizeSession = useCallback((session) => ({
+        id: session.id,
+        title: session.title || "Cuộc chat mới",
+        createdAt: session.createdAt ?? session.created_at,
+        documentCount: session.documentCount ?? session.document_count ?? 0,
+    }), []);
+
     const normalizeCitations = useCallback((rawCitations) => {
         if (!rawCitations || typeof rawCitations !== "object") return {};
 
@@ -45,6 +60,19 @@ export function RagProvider({children}){
         );
     }, []);
 
+    const normalizeMessage = useCallback((m) =>
+        m.role === "user"
+            ? { id: `u-${m.id}`, role: "user", text: m.text }
+            : {
+                id: `a-${m.id}`,
+                role: "assistant",
+                parts: m.parts?.length ? m.parts : [{ text: m.text || "Không có câu trả lời." }],
+                usedSources: m.usedSources ?? [],
+                citations: normalizeCitations(m.citations),
+                token: m.token,
+            },
+    [normalizeCitations]);
+
     const toggleSource = useCallback((id)=>{
         setSources((prev) => prev.map((s) => (s.id === id ? {...s, checked: !s.checked} : s)));
     },[]);
@@ -54,11 +82,11 @@ export function RagProvider({children}){
         setSources((prev) => prev.map((s) => ({...s, checked: shouldCheck})));
     },[]);
 
-    const getSource = useCallback(async()=>{
+    const getSource = useCallback(async(nextSessionId = sessionId)=>{
         setSourcesLoading(true);
         setSourcesError(null);
         try{
-            const data = await fetchSources();
+            const data = await fetchSources(nextSessionId);
             const normalized = Array.isArray(data)
                 ? data.map((item) => {
                     const source = normalizeSource(item);
@@ -77,44 +105,75 @@ export function RagProvider({children}){
         } finally {
             setSourcesLoading(false);
         }
-    },[normalizeSource]);
+    },[normalizeSource, sessionId]);
 
     useEffect(() => {
-        getSource();
-    }, [getSource]);
+        if (token && sessionId) getSource(sessionId);
+        if (token && !sessionId) setSources([]);
+    }, [getSource, sessionId, token]);
 
-    const loadAllMessages = useCallback(async () => {
+    const loadSessions = useCallback(async () => {
         if (!token) {
-            setMessages([]); 
+            setSessions([]);
+            setSessionId(null);
+            setMessages([]);
+            setSources([]);
+            return;
+        }
+        setSessionsLoading(true);
+        try {
+            const data = await fetchSessions();
+            const restored = Array.isArray(data) ? data.map(normalizeSession) : [];
+            setSessions(restored);
+            setSessionId((current) => current ?? restored[0]?.id ?? null);
+        } catch (err) {
+            console.error("Không tải được danh sách chat:", err);
+        } finally {
+            setSessionsLoading(false);
+        }
+    }, [normalizeSession, token]);
+
+    useEffect(() => { loadSessions(); }, [loadSessions]);
+
+    const loadSessionMessages = useCallback(async (nextSessionId = sessionId) => {
+        if (!token || !nextSessionId) {
+            setMessages([]);
             return;
         }
         setHistoryLoading(true);
         try {
-            const data = await fetchMessages();
-            if (!Array.isArray(data) || data.length === 0) return;
-
-            const restored = data.map((m) =>
-                m.role === "user"
-                    ? { id: `u-${m.id}`, role: "user", text: m.text }
-                    : {
-                        id: `a-${m.id}`,
-                        role: "assistant",
-                        parts: m.parts?.length ? m.parts : [{ text: m.text || "Không có câu trả lời." }],
-                        usedSources: m.usedSources ?? [],
-                        citations: normalizeCitations(m.citations),
-                        token: m.token,
-                    }
-            );
-            setMessages(restored);
-            setSessionId(data[data.length - 1].sessionId);
+            const data = await fetchSessionMessages(nextSessionId);
+            setMessages(Array.isArray(data) ? data.map(normalizeMessage) : []);
         } catch (err) {
             console.error("Không tải được lịch sử chat:", err);
+            setMessages([]);
         } finally {
             setHistoryLoading(false);
         }
-    }, [normalizeCitations, token]);
+    }, [normalizeMessage, sessionId, token]);
 
-    useEffect(() => { loadAllMessages(); }, [loadAllMessages]);
+    useEffect(() => { loadSessionMessages(sessionId); }, [loadSessionMessages, sessionId]);
+
+    const selectSession = useCallback((nextSessionId) => {
+        if (thinking) return;
+        setActiveCite(null);
+        setSessionId(nextSessionId);
+    }, [thinking]);
+
+    const startNewSession = useCallback(async () => {
+        const session = normalizeSession(await createSession());
+        setSessions((prev) => [session, ...prev]);
+        setSessionId(session.id);
+        setMessages([]);
+        setSources([]);
+        setActiveCite(null);
+        return session.id;
+    }, [normalizeSession]);
+
+    const ensureSession = useCallback(async () => {
+        if (sessionId) return sessionId;
+        return startNewSession();
+    }, [sessionId, startNewSession]);
 
     useEffect(()=>{
         const token = localStorage.getItem("auth_token");
@@ -189,11 +248,13 @@ export function RagProvider({children}){
             return;
         }
         try {
-            const data = await askQuestion({ question: trimmed, sourceIds: selectedIds, sessionId, provider });
+            const currentSessionId = await ensureSession();
+            const data = await askQuestion({ question: trimmed, sourceIds: selectedIds, sessionId: currentSessionId, provider });
             const usedSources = (data.usedSources ?? data.sources?.map((source) => source.id) ?? selectedIds)
                 .map((id) => Number(id));
             const nextCitations = normalizeCitations(data.citations);   
-            setSessionId(data.sessionId ?? sessionId);
+            setSessionId(data.sessionId ?? currentSessionId);
+            loadSessions();
 
             const newMessageId = `a-${Date.now()}`;                    
             const firstCitationIndex = Number(Object.keys(nextCitations)[0]);
@@ -226,13 +287,20 @@ export function RagProvider({children}){
         } finally {
             setThinking(false);
         }
-    }, [sources, thinking, sessionId, normalizeCitations]);
+    }, [sources, thinking, ensureSession, normalizeCitations, loadSessions]);
 
     const value = {
         sources,
         setSources,
         normalizeSource,
         getSource,
+        sessions,
+        sessionsLoading,
+        sessionId,
+        selectSession,
+        startNewSession,
+        ensureSession,
+        loadSessions,
         sourcesLoading,
         sourcesError,
         toggleSource,
