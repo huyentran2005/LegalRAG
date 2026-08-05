@@ -17,7 +17,8 @@ export default function UploadButton(){
     };
 
     const appendSource = (data) => {
-        setSources((prev)=> [...prev, normalizeSource(data)]);
+        const nextSources = [data, ...(data.linkedSources || [])].map(normalizeSource);
+        setSources((prev)=> [...prev, ...nextSources]);
         loadSessions();
     };
     
@@ -119,7 +120,7 @@ export default function UploadButton(){
             <input
                 ref = {fileInputRef}
                 type="file"
-                accept="application/pdf,.pdf"
+                accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
                 className="hidden"
                 onChange={handleUpload}
             />

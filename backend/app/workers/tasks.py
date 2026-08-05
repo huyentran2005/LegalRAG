@@ -40,7 +40,7 @@ def process_uploaded_file(self, document_id: int):
         logger.info("Processing document id=%s filename=%s", document.id, document.filename)
         local_path = download_to_temp(document.storage_path)
         loader = Loader()
-        pages = loader.load_pdf(local_path)
+        pages = loader.load_file(local_path, document.filename)
         logger.info("Loaded document id=%s pages=%s", document.id, len(pages))
 
         full_text = "\n".join(page.page_content for page in pages)
