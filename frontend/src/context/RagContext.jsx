@@ -102,6 +102,7 @@ export function RagProvider({children}){
                         parts: m.parts?.length ? m.parts : [{ text: m.text || "Không có câu trả lời." }],
                         usedSources: m.usedSources ?? [],
                         citations: normalizeCitations(m.citations),
+                        token: m.token,
                     }
             );
             setMessages(restored);
@@ -182,6 +183,7 @@ export function RagProvider({children}){
                 parts: [{ text: "Bạn hãy chọn ít nhất một tài liệu ở bên trái trước khi hỏi nhé." }],
                 usedSources: [],
                 citations: {},
+                token: 0,
             }]);
             setThinking(false);
             return;
@@ -204,7 +206,8 @@ export function RagProvider({children}){
                 role: "assistant",
                 parts: data.parts?.length ? data.parts : [{ text: data.answer || "Không có câu trả lời." }],
                 usedSources,
-                citations: nextCitations,   
+                citations: nextCitations, 
+                token: data.token,  
             }]);
         } catch (err) {
             console.error(err);
@@ -218,6 +221,7 @@ export function RagProvider({children}){
                 parts: [{ text: message || "Không tạo được câu trả lời từ tài liệu lúc này. Vui lòng thử lại hoặc kiểm tra backend." }],
                 usedSources: [],
                 citations: {},
+                token: 0,
             }]);
         } finally {
             setThinking(false);

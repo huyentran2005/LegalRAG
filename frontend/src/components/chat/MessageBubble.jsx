@@ -38,6 +38,12 @@ export default function MessageBubble({ message }) {
         )}
       </div>
 
+      <div className="flex justify-end mt-2">
+        <span className="text-xs text-gray-500">
+          {message.token} tokens
+        </span>
+      </div>
+
       {message.usedSources && (
         <div className="flex gap-1.5 mt-2.5 flex-wrap">
           {message.usedSources.map((sid) => {

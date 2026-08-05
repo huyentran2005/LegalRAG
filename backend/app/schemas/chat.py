@@ -35,6 +35,7 @@ class AnswerResponse(BaseModel):
     citations: dict[int, CitationOut] = Field(default_factory=dict)
     parts: List[MessagePart] = Field(default_factory=list)
     usedSources: List[int] = Field(default_factory=list)
+    token: int
 
 class ChatMessageOut(BaseModel):
     id: int
@@ -45,6 +46,7 @@ class ChatMessageOut(BaseModel):
     usedSources: List[int] | None = None
     citations: dict[int, CitationOut] | None = None
     createdAt: datetime
+    token: int
 
 class ChatSessionOut(BaseModel):
     id: int

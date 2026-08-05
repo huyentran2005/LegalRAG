@@ -31,6 +31,10 @@ class ChatMessage(Base):
     )
     citations: Mapped[list | None] = mapped_column(JSON, nullable= True)
 
+    token: Mapped[int] = mapped_column(
+        Integer,
+        default = 0,
+    )
     created_at: Mapped[datetime]= mapped_column(
         DateTime,
         default= lambda: datetime.now(timezone.utc)

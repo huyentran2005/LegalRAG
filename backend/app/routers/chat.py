@@ -1,9 +1,11 @@
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
+import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 import re
 import json
+import os
 
 from app.api.deps import get_current_user
 from app.database import get_db
@@ -20,6 +22,8 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 CITATION_SIMILARITY_THRESHOLD = 0.45
 HYBRID_POOL_SIZE = 80
 RRF_K = 60
+DEFAULT_CHUNK_CHAR_LIMIT = 900
+DEFAULT_OLLAMA_RESULT_LIMIT = 5
 
 
 _TOKEN_RE = re.compile(r"[0-9A-Za-zÀ-Ỵà-ỵĐđ]+")
@@ -33,6 +37,24 @@ def _metadata_text(metadata: dict | None) -> str:
     if not metadata:
         return ""
     return json.dumps(metadata, ensure_ascii=False)
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _is_ollama_provider(provider: str | None) -> bool:
+    return not provider or not provider.startswith("gemini")
+
+
+def _trim_chunk_content(content: str, limit: int) -> str:
+    cleaned = re.sub(r"\s+", " ", content).strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return f"{cleaned[:limit].rsplit(' ', 1)[0]}..."
 
 
 def _lexical_score(query: str, chunk: DocumentChunk) -> float:
@@ -153,12 +175,18 @@ def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_us
  
     query_embedding = embed([payload.question])[0].tolist()
  
+    result_limit = (
+        _env_int("OLLAMA_RESULT_LIMIT", DEFAULT_OLLAMA_RESULT_LIMIT)
+        if _is_ollama_provider(payload.provider)
+        else 8
+    )
+
     results = search_similar_chunks(
         db=db,
         query=payload.question,
         query_embedding=query_embedding,
         owner_id=current_user.id,
-        k=8,
+        k=result_limit,
         source_ids=payload.sourceIds,
     )
  
@@ -168,15 +196,30 @@ def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_us
     # Build context có đánh số [đoạn i] + chunk_lookup để gán citation sau này.
     chunk_lookup: dict[int, tuple] = {}
     numbered_chunks = []
+    chunk_char_limit = (
+        _env_int("OLLAMA_CHUNK_CHAR_LIMIT", DEFAULT_CHUNK_CHAR_LIMIT)
+        if _is_ollama_provider(payload.provider)
+        else 1600
+    )
     for i, (chunk, document) in enumerate(results, start=1):
         chunk_lookup[i] = (document, chunk)
-        numbered_chunks.append(f"[đoạn {i}] {chunk.content.strip()}")
+        numbered_chunks.append(f"[đoạn {i}] {_trim_chunk_content(chunk.content, chunk_char_limit)}")
     context = "\n".join(numbered_chunks)
  
     llm = get_llm(payload.provider)
     rag = OfficeRAG(llm)
-    raw_answer = rag.answer(context, payload.question)
- 
+    try:
+        ans = rag.answer(context, payload.question)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                "Qwen phản hồi quá lâu nên yêu cầu đã hết thời gian chờ. "
+                "Bạn thử hỏi ngắn hơn, chọn ít tài liệu hơn, hoặc tăng OLLAMA_TIMEOUT."
+            ),
+        ) from exc
+    raw_answer = ans["answer"]
+    token = ans["token"]
     if FocusedAnswerParser._looks_degenerate(raw_answer):
         # Output bị suy biến (lẫn ký tự lạ ngoài tiếng Việt/Latin) -> không
         # hiển thị rác cho người dùng, trả về thông báo an toàn.
@@ -245,6 +288,7 @@ def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_us
         session_id=session.id,
         role=MessageRole.USER,
         content=payload.question,
+        token = 0,
     ))
     db.add(ChatMessage(
         session_id=session.id,
@@ -255,6 +299,7 @@ def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_us
             "citations": citations,
             "usedSources": used_sources,
         },
+        token = token,
     ))
     db.commit()
  
@@ -271,6 +316,7 @@ def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_us
         citations=citations,  # type: ignore
         parts=parts,  # type: ignore
         usedSources=used_sources,
+        token = token,
     )
 
 
@@ -298,6 +344,7 @@ def get_all_messages(db : Session = Depends(get_db), current_user = Depends(get_
                     citations=None,
                     usedSources=None,
                     createdAt=msg.created_at,
+                    token =0,
                 )
             )
         else:  # ASSISTANT
@@ -312,6 +359,7 @@ def get_all_messages(db : Session = Depends(get_db), current_user = Depends(get_
                     citations=stored.get("citations", {}), # type: ignore
                     usedSources=stored.get("usedSources", []), # type: ignore
                     createdAt=msg.created_at,
+                    token = msg.token,
                 ) 
             )
 

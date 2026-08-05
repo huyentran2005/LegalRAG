@@ -71,7 +71,7 @@ class OfficeRAG:
     """)
         self.answer_parser = FocusedAnswerParser()
 
-    def answer(self, context: str, question: str) -> str:
+    def answer(self, context: str, question: str) -> dict:
         """Dùng khi context đã được build sẵn từ bên ngoài (ví dụ endpoint
         tự query DB và đánh số [đoạn i]). Trả về RAW text (chỉ bóc phần
         sau [TRẢ LỜI]:), KHÔNG cắt/nối câu, để giữ nguyên câu gốc cho
@@ -82,7 +82,28 @@ class OfficeRAG:
 
         if "[TRẢ LỜI]:" in text:
             text = text.split("[TRẢ LỜI]:")[-1].strip()
-        return text.strip()
+
+        prompt_tokens = 0
+        completion_tokens = 0
+
+        # Gemini
+        if getattr(raw, "usage_metadata", None):
+            usage = raw.usage_metadata
+            prompt_tokens = usage.get("input_tokens", 0)
+            completion_tokens = usage.get("output_tokens", 0)
+
+        # Ollama
+        elif getattr(raw, "response_metadata", None):
+            meta = raw.response_metadata or {}
+            prompt_tokens = meta.get("prompt_eval_count", 0)
+            completion_tokens = meta.get("eval_count", 0)
+
+        total_tokens = prompt_tokens + completion_tokens
+
+        return {
+            "token": total_tokens,
+            "answer": text.strip(),
+        }
 
     @staticmethod
     def _extract_text(raw) -> str:

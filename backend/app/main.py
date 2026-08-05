@@ -54,6 +54,11 @@ with engine.begin() as conn:
         "ADD COLUMN IF NOT EXISTS chunk_metadata JSON DEFAULT '{}' NOT NULL"
     ))
 
+    conn.execute(text(
+            "ALTER TABLE chat_messages "
+            "ADD COLUMN IF NOT EXISTS token INTEGER DEFAULT 0"
+    ))
+
 
 @app.get("/")
 def healthy_check():
