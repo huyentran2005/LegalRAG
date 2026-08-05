@@ -45,6 +45,15 @@ app.add_middleware(
 
 with engine.begin() as conn:
     conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    conn.execute(text("CREATE EXTENSION IF NOT EXISTS unaccent"))
+    conn.execute(text(
+        "CREATE OR REPLACE FUNCTION immutable_unaccent(text) "
+        "RETURNS text "
+        "LANGUAGE sql "
+        "IMMUTABLE "
+        "PARALLEL SAFE "
+        "AS $$ SELECT public.unaccent('public.unaccent', $1) $$"
+    ))
 
 Base.metadata.create_all(bind=engine)
 
@@ -57,6 +66,13 @@ with engine.begin() as conn:
     conn.execute(text(
             "ALTER TABLE chat_messages "
             "ADD COLUMN IF NOT EXISTS token INTEGER DEFAULT 0"
+    ))
+
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_document_chunks_fts_unaccent "
+        "ON document_chunks USING GIN ("
+        "to_tsvector('simple', immutable_unaccent(content || ' ' || coalesce(chunk_metadata::text, '')))"
+        ")"
     ))
 
 

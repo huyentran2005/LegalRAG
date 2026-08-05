@@ -2,9 +2,8 @@ import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
 import httpx
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import Text, cast, func, literal, select
 import re
-import json
 import os
 
 from app.api.deps import get_current_user
@@ -26,19 +25,6 @@ DEFAULT_CHUNK_CHAR_LIMIT = 900
 DEFAULT_OLLAMA_RESULT_LIMIT = 5
 
 
-_TOKEN_RE = re.compile(r"[0-9A-Za-zÀ-Ỵà-ỵĐđ]+")
-
-
-def _search_tokens(text: str) -> list[str]:
-    return [token.lower() for token in _TOKEN_RE.findall(text) if len(token) > 1]
-
-
-def _metadata_text(metadata: dict | None) -> str:
-    if not metadata:
-        return ""
-    return json.dumps(metadata, ensure_ascii=False)
-
-
 def _env_int(name: str, default: int) -> int:
     try:
         return int(os.getenv(name, default))
@@ -57,24 +43,6 @@ def _trim_chunk_content(content: str, limit: int) -> str:
     return f"{cleaned[:limit].rsplit(' ', 1)[0]}..."
 
 
-def _lexical_score(query: str, chunk: DocumentChunk) -> float:
-    query_tokens = _search_tokens(query)
-    if not query_tokens:
-        return 0.0
-
-    searchable = f"{chunk.content} {_metadata_text(chunk.chunk_metadata)}".lower()
-    score = 0.0
-    for token in query_tokens:
-        occurrences = searchable.count(token)
-        if occurrences:
-            score += 1.0 + min(occurrences, 5) * 0.2
-
-    phrase = query.strip().lower()
-    if phrase and phrase in searchable:
-        score += 3.0
-    return score
- 
- 
 def search_similar_chunks(
     db: Session,
     query: str,
@@ -99,13 +67,22 @@ def search_similar_chunks(
         .limit(max(k, HYBRID_POOL_SIZE))
     ).all())
 
-    candidate_rows = list(db.execute(base_stmt.limit(1000)).all())
-    lexical_rows = sorted(
-        ((row, _lexical_score(query, row[0])) for row in candidate_rows),
-        key=lambda item: item[1],
-        reverse=True,
+    searchable_text = (
+        DocumentChunk.content
+        + literal(" ")
+        + func.coalesce(cast(DocumentChunk.chunk_metadata, Text), "")
     )
-    lexical_rows = [row for row, score in lexical_rows[:HYBRID_POOL_SIZE] if score > 0]
+    normalized_searchable_text = func.immutable_unaccent(searchable_text)
+    normalized_query = func.immutable_unaccent(query)
+    fts_vector = func.to_tsvector("simple", normalized_searchable_text)
+    fts_query = func.plainto_tsquery("simple", normalized_query)
+    fts_rank = func.ts_rank_cd(fts_vector, fts_query)
+    lexical_rows = list(db.execute(
+        base_stmt
+        .where(fts_vector.op("@@")(fts_query))
+        .order_by(fts_rank.desc())
+        .limit(HYBRID_POOL_SIZE)
+    ).all())
 
     fused: dict[int, dict] = {}
     for rank, row in enumerate(vector_rows, start=1):
