@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from sqlalchemy import text
-from sentence_transformers import SentenceTransformer
+# from sentence_transformers import SentenceTransformer
 import os
 
 from app.database import engine

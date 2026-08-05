@@ -78,7 +78,7 @@ services:
   worker:
     build: ./backend
     container_name: legalrag-worker
-    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=2
+    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=1
     restart: unless-stopped
     volumes:
       - ./backend:/app
@@ -89,6 +89,9 @@ services:
       S3_ENDPOINT_URL: http://minio:9000
       S3_ACCESS_KEY: ${MINIO_ROOT_USER}
       S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      EMBEDDING_BATCH_SIZE: 4
+      EMBEDDING_INTRA_OP_THREADS: 1
+      EMBEDDING_INTER_OP_THREADS: 1
     depends_on:
       db:
         condition: service_healthy
