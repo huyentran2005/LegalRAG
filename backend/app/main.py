@@ -12,7 +12,7 @@ from app.routers.auth import router as auth_router
 from app.routers.upload import router as upload_router
 from app.routers.chat import router as chat_router
 from app.routers.ws import ws_router
-from app.services.storage_service import ensure_bucket_exists
+from app.services.source.storage_service import ensure_bucket_exists
 import app.models
 
 

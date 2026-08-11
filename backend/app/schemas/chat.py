@@ -2,6 +2,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 from typing import List, Literal
 
+from app.models.chat_message import ChatMessage, MessageRole
+from app.models.chat_session import ChatSession
+
 class AskRequest(BaseModel):
     question: str
     sourceIds: List[int] | None = None
@@ -55,3 +58,39 @@ class ChatSessionOut(BaseModel):
     messages: List[ChatMessageOut] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
+
+def _message_out(msg: ChatMessage) -> ChatMessageOut:
+    if msg.role == MessageRole.USER:
+        return ChatMessageOut(
+            id=msg.id,
+            sessionId=msg.session_id,
+            role="user",
+            text=msg.content,
+            parts=None,
+            citations=None,
+            usedSources=None,
+            createdAt=msg.created_at,
+            token=0,
+        )
+
+    stored = msg.citations or {}
+    return ChatMessageOut(
+        id=msg.id,
+        sessionId=msg.session_id,
+        role="assistant",
+        text=msg.content,
+        parts=stored.get("parts", [{"text": msg.content}]), # type: ignore
+        citations=stored.get("citations", {}), # type: ignore
+        usedSources=stored.get("usedSources", []), # type: ignore
+        createdAt=msg.created_at,
+        token=msg.token,
+    )
+
+
+def _session_payload(session: ChatSession, document_count: int = 0) -> dict:
+    return {
+        "id": session.id,
+        "title": session.title,
+        "createdAt": session.created_at,
+        "documentCount": document_count,
+    }

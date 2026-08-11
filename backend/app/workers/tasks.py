@@ -14,7 +14,7 @@ from app.core.config import get_settings
 from app.database import SessionLocal
 from app.models.document import Document, DocumentStatus
 from app.models.document_chunk import DocumentChunk
-from app.services.storage_service import download_to_temp, cleanup_temp_file
+from app.services.source.storage_service import download_to_temp, cleanup_temp_file
 
 
 # EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
