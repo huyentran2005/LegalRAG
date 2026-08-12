@@ -1,11 +1,11 @@
-import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
 import httpx
 from sqlalchemy.orm import Session
-from sqlalchemy import Text, and_, desc, func
+from sqlalchemy import and_, desc, func
 import logging
 
 from app.api.deps import get_current_user
+from app.agent.web_search import answer_from_web_search
 from app.database import get_db
 from app.models.document import Document
 from app.models.chat_message import ChatMessage, MessageRole
@@ -13,8 +13,9 @@ from app.models.chat_session import ChatSession
 from app.schemas.chat import AskRequest, AnswerResponse, SourceOut, ChatMessageOut, _session_payload, _message_out
 from app.schemas.sessions import CreateSessionRequest
 from app.services.chat.utils import _fallback_provider,_is_quota_exhausted_error
-from app.services.chat.citations import _assign_citations_by_similarity
+from app.services.chat.citations import _extract_llm_used_citation_indices, _format_answer_layout, _strip_llm_citation_markers
 from rag.service.answer_parser import  FocusedAnswerParser
+from rag.service.llm_model import get_gemini_api_keys, get_llm
 from app.services.chat.pipeline import _run_rag_pipeline
 
 
@@ -22,6 +23,84 @@ from app.services.chat.pipeline import _run_rag_pipeline
 router = APIRouter(prefix="/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
 
+
+def _run_pipeline_with_gemini_key_rotation(
+    db: Session,
+    session: ChatSession,
+    current_user_id: int,
+    question: str,
+    source_ids: list[int] | None,
+    provider: str,
+):
+    if not provider.startswith("gemini"):
+        return _run_rag_pipeline(
+            db=db,
+            session=session,
+            current_user_id=current_user_id,
+            question=question,
+            source_ids=source_ids,
+            provider=provider,
+        )
+
+    keys = get_gemini_api_keys()
+    if not keys:
+        raise RuntimeError("GEMINI_API_KEYS or GEMINI_API is required for Gemini provider.")
+
+    last_quota_error = None
+    for key_index, api_key in enumerate(keys, start=1):
+        try:
+            return _run_rag_pipeline(
+                db=db,
+                session=session,
+                current_user_id=current_user_id,
+                question=question,
+                source_ids=source_ids,
+                provider=provider,
+                gemini_api_key=api_key,
+            )
+        except Exception as exc:
+            if not _is_quota_exhausted_error(exc):
+                raise
+            last_quota_error = exc
+            logger.warning("Gemini key %s/%s quota exhausted, trying next key", key_index, len(keys))
+
+    raise last_quota_error or RuntimeError("All Gemini API keys failed.")
+
+
+def _run_web_search_fallback(question: str, provider: str) -> dict:
+    if not provider.startswith("gemini"):
+        llm = get_llm(provider)
+        return answer_from_web_search(question, llm)
+
+    keys = get_gemini_api_keys()
+    if not keys:
+        raise RuntimeError("GEMINI_API_KEYS or GEMINI_API is required for Gemini provider.")
+
+    last_quota_error = None
+    for key_index, api_key in enumerate(keys, start=1):
+        try:
+            llm = get_llm(provider, gemini_api_key=api_key)
+            return answer_from_web_search(question, llm)
+        except Exception as exc:
+            if not _is_quota_exhausted_error(exc):
+                raise
+            last_quota_error = exc
+            logger.warning("Gemini key %s/%s quota exhausted during web fallback", key_index, len(keys))
+
+    raise last_quota_error or RuntimeError("All Gemini API keys failed.")
+
+
+def _web_fallback_payload(question: str, provider: str) -> tuple[str, int, dict, list, list, dict]:
+    ans = _run_web_search_fallback(question, provider)
+    final_answer = ans["answer"]
+    token = ans["token"]
+    parts = [{"text": final_answer}]
+    metadata = {
+        "parts": parts,
+        "citations": {},
+        "usedSources": [],
+    }
+    return final_answer, token, {}, [], parts, metadata
 
 
 
@@ -92,7 +171,7 @@ def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_us
  
     primary_provider = payload.provider or "gemini-3.5-flash"
     try:
-        ans, results, chunk_lookup, retrieval_question = _run_rag_pipeline(
+        ans, results, chunk_lookup, _retrieval_question = _run_pipeline_with_gemini_key_rotation(
             db=db,
             session=session,
             current_user_id=current_user.id,
@@ -100,6 +179,22 @@ def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_us
             source_ids=payload.sourceIds,
             provider=primary_provider,
         )
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+        try:
+            final_answer, token, citations, used_sources, parts, citation_metadata = _web_fallback_payload(
+                payload.question,
+                primary_provider,
+            )
+            results = []
+            chunk_lookup = {}
+        except Exception as web_exc:
+            logger.exception("Web search fallback failed")
+            raise HTTPException(
+                status_code=502,
+                detail=f"Không tìm thấy thông tin trong tài liệu và web search thất bại: {web_exc}",
+            ) from web_exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except httpx.TimeoutException as exc:
@@ -112,9 +207,9 @@ def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_us
         ) from exc
     except Exception as exc:
         if primary_provider.startswith("gemini") and _is_quota_exhausted_error(exc):
-            logger.warning("Gemini quota exhausted, falling back to Ollama: %s", exc)
+            logger.warning("All Gemini keys exhausted, falling back to Ollama: %s", exc)
             try:
-                ans, results, chunk_lookup, retrieval_question = _run_rag_pipeline(
+                ans, results, chunk_lookup, _retrieval_question = _run_rag_pipeline(
                     db=db,
                     session=session,
                     current_user_id=current_user.id,
@@ -146,58 +241,61 @@ def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_us
                 ),
             ) from exc
 
-    raw_answer = ans["answer"]
-    token = ans["token"]
-    if FocusedAnswerParser._looks_degenerate(raw_answer):
+    if "final_answer" in locals():
+        pass
+    else:
+        raw_answer = ans["answer"]
+        token = ans["token"]
+        if FocusedAnswerParser._looks_degenerate(raw_answer):
         # Output bị suy biến (lẫn ký tự lạ ngoài tiếng Việt/Latin) -> không
         # hiển thị rác cho người dùng, trả về thông báo an toàn.
-        final_answer = (
-            "Xin lỗi, hệ thống gặp lỗi khi tạo câu trả lời cho câu hỏi này. "
-            "Vui lòng thử lại hoặc diễn đạt câu hỏi theo cách khác."
-        )
-        citations = {}
-        used_sources = []
-        parts = [{"text": final_answer}]
-    elif "không có thông tin" in raw_answer.lower():
-        final_answer = "Không có thông tin nào."
-        citations = {}
-        used_sources = []
-        parts = [{"text": final_answer}]
-    else:
-        sentences = FocusedAnswerParser.split_sentences(raw_answer)
-        assigned = _assign_citations_by_similarity(sentences, chunk_lookup)
-
-        final_answer = " ".join(s for s, _, _ in assigned) or raw_answer
-
-        # Build citations CHỈ từ chunk thực sự khớp (similarity >= ngưỡng)
-        used_chunk_indices = sorted({idx for _, idx, _ in assigned if idx is not None})
-        citations = {}
-        citation_document_ids = set()
-        used_sources = []
-        for idx in used_chunk_indices:
-            document, chunk = chunk_lookup[idx]
-            citations[idx] = {
-                "sourceId": document.id,
-                "sourceName": document.filename,
-                "page": f"Trang {(chunk.chunk_index or 0) + 1}",
-                "excerpt": chunk.content.strip()[:500],
-            }
-            if document.id not in citation_document_ids:
-                citation_document_ids.add(document.id)
-                used_sources.append(document.id)
-
-        parts = [{"text": final_answer}]
-        for idx in used_chunk_indices:
-            parts.append({"cite": str(idx)})
-
-        # Nếu không câu nào đạt ngưỡng similarity với bất kỳ chunk nào,
-        # cảnh báo rõ ràng thay vì âm thầm hiển thị answer không có nguồn.
-        if not used_chunk_indices:
-            final_answer += (
-                " (Lưu ý: hệ thống không xác định được nguồn tài liệu chắc chắn cho câu trả lời này, "
-                "vui lòng kiểm tra lại thủ công.)"
+            final_answer = (
+                "Xin lỗi, hệ thống gặp lỗi khi tạo câu trả lời cho câu hỏi này. "
+                "Vui lòng thử lại hoặc diễn đạt câu hỏi theo cách khác."
             )
+            citations = {}
+            used_sources = []
             parts = [{"text": final_answer}]
+        elif "không có thông tin" in raw_answer.lower():
+            try:
+                final_answer, token, citations, used_sources, parts, citation_metadata = _web_fallback_payload(
+                    payload.question,
+                    primary_provider,
+                )
+            except Exception as web_exc:
+                logger.exception("Web search fallback failed")
+                final_answer = "Không có thông tin nào."
+                citations = {}
+                used_sources = []
+                parts = [{"text": final_answer}]
+        else:
+            used_chunk_indices = _extract_llm_used_citation_indices(raw_answer, chunk_lookup)
+            final_answer = _format_answer_layout(_strip_llm_citation_markers(raw_answer) or raw_answer)
+
+            # Build citations tu cac [doan n] ma LLM da dung trong cau tra loi.
+            citations = {}
+            citation_document_ids = set()
+            used_sources = []
+            for idx in used_chunk_indices:
+                document, chunk = chunk_lookup[idx]
+                citations[idx] = {
+                    "sourceId": document.id,
+                    "sourceName": document.filename,
+                    "page": f"Trang {(chunk.chunk_index or 0) + 1}",
+                    "excerpt": chunk.content.strip()[:500],
+                }
+                if document.id not in citation_document_ids:
+                    citation_document_ids.add(document.id)
+                    used_sources.append(document.id)
+
+            parts = [{"text": final_answer}]
+            for idx in used_chunk_indices:
+                parts.append({"cite": str(idx)})
+        citation_metadata = {
+            "parts": parts,
+            "citations": citations,
+            "usedSources": used_sources,
+        }
     if payload.sourceIds:
         (
             db.query(Document)
@@ -217,11 +315,7 @@ def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_us
         session_id=session.id,
         role=MessageRole.ASSISTANT,
         content=final_answer,
-        citations={
-            "parts": parts,
-            "citations": citations,
-            "usedSources": used_sources,
-        },
+        citations=citation_metadata,
         token = token,
     ))
     db.commit()

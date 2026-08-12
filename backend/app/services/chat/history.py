@@ -4,17 +4,6 @@ from app.models.chat_message import ChatMessage
 from app.models.chat_session import ChatSession
 
 MAX_HISTORY_TURNS = 10
-REFERENCE_RULE_PATTERN = re.compile(
-    r"\b("
-    r"khoản này|điều này|điều đó|cái này|cái đó|việc này|việc đó|"
-    r"nội dung này|quy định này|trường hợp này|vấn đề này|"
-    r"nó|họ|người đó|bên đó|"
-    r"tiếp theo|tiếp tục|vậy còn|thế còn|còn khoản|còn điều|"
-    r"như trên|ở trên|vừa nêu|vừa nói|vừa rồi|trước đó|"
-    r"câu trên|ý trên|phần trên|tài liệu đó"
-    r")\b",
-    re.IGNORECASE,
-)
 
 
 def _load_conversation_memory(
@@ -43,9 +32,6 @@ def _load_conversation_memory(
     rows.reverse()
     return [{"role": msg.role.value, "content": msg.content} for msg in rows]
 
-def _question_matches_reference_rule(question: str) -> bool:
-    return bool(REFERENCE_RULE_PATTERN.search(question.lower()))
-
 
 def _format_memory_for_prompt(memory: list[dict]) -> str:
     lines = []
@@ -55,4 +41,3 @@ def _format_memory_for_prompt(memory: list[dict]) -> str:
         if content:
             lines.append(f"{speaker}: {content}")
     return "\n".join(lines)
-

@@ -44,7 +44,7 @@ class FocusedAnswerParser(StrOutputParser):
         if not text or len(text.strip()) < 3:
             return True
         allowed = re.compile(
-            r'[a-zA-Z0-9\sÀ-ỹà-ỹ.,!?;:\-\'"()%/\u0300-\u036f]'
+            r'[a-zA-Z0-9\sÀ-ỹà-ỹ.,!?;:\-\'"()%\[\]/\u0300-\u036f]'
         )
         stripped = allowed.sub('', text)
         if len(stripped) / max(len(text), 1) > 0.15:
@@ -64,10 +64,21 @@ class OfficeRAG:
         [CÂU HỎI]:
         {question}
 
-        Hãy trả lời dựa trên tài liệu. Nếu tài liệu không có thông tin, nói rõ "Không có
+        Hãy trả lời dựa trên tài liệu. Ghi rõ điều khoản được sử dụng vào câu trả lời. Nếu tài liệu không có thông tin, nói rõ "Không có
         thông tin nào."
+        Khi câu hỏi yêu cầu đánh giá đúng/sai hoặc phân loại nghĩa vụ/quyền/trách nhiệm,
+        phải đối chiếu trực tiếp với điều khoản trong tài liệu. Nếu tài liệu phân biệt
+        "nghĩa vụ riêng" và "nghĩa vụ chung", không được tự suy diễn một nghĩa vụ riêng
+        thành nghĩa vụ chung chỉ vì có tài sản chung. Nếu tài liệu quy định một giao dịch
+        hoặc thỏa thuận "vô hiệu", phải kết luận rõ là vô hiệu, không dùng cách nói mơ hồ
+        như "có thể không có hiệu lực".
         Trả lời đầy đủ thông tin (3-5 câu chi tiết), không thêm bất kỳ thông tin nào ngoài
-        tài liệu.
+        tài liệu. Với mỗi ý dùng thông tin từ tài liệu, ghi citation ngay sau ý đó bằng
+        đúng định dạng [đoạn n], trong đó n là số đoạn đã cung cấp. Chỉ cite các đoạn
+        thực sự được dùng để trả lời.
+        Bố cục câu trả lời phải dễ đọc: nếu có từ 2 ý trở lên, viết một câu dẫn ngắn,
+        sau đó xuống dòng và dùng danh sách gạch đầu dòng. Không dồn nhiều ý đánh số
+        trên cùng một dòng.
         [TRẢ LỜI]:
     """)
         self.answer_parser = FocusedAnswerParser()

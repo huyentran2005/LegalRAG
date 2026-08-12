@@ -1,53 +1,70 @@
-
-import numpy as np
+import re
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
-from rag.service.emb_model import embed
 from app.models.document import Document, DocumentStatus
 from app.models.document_chunk import DocumentChunk
 
 
 MAX_REFERENCE_CHUNKS = 10
-CITATION_SIMILARITY_THRESHOLD = 0.45
 
-def _assign_citations_by_similarity(
-    sentences: list[str],
+
+def _extract_llm_used_citation_indices(
+    answer: str,
     chunk_lookup: dict[int, tuple],
-    threshold: float = CITATION_SIMILARITY_THRESHOLD,
-) -> list[tuple[str, int | None, float]]:
-    """Với mỗi câu trong answer, tìm chunk nguồn (trong chunk_lookup) có
-    embedding gần nhất theo cosine similarity. Nếu similarity cao nhất
-    vẫn dưới threshold, câu đó không được gán nguồn (idx=None).
- 
-    Trả về list (sentence, chunk_index_or_None, best_similarity).
-    """
-    if not sentences:
+) -> list[int]:
+    """Lay citation indices do LLM tu khai bao trong answer, dang [doan n]."""
+    if not answer or not chunk_lookup:
         return []
- 
-    chunk_indices = list(chunk_lookup.keys())
-    chunk_texts = [chunk_lookup[i][1].content.strip() for i in chunk_indices]
- 
-    # Encode theo batch 1 lần duy nhất (không encode từng câu/chunk riêng lẻ
-    # để tránh gọi model nhiều lần không cần thiết).
-    sentence_embeddings = embed(sentences)
-    chunk_embeddings = embed(chunk_texts)
- 
-    assigned: list[tuple[str, int | None, float]] = []
-    for sent, sent_emb in zip(sentences, sentence_embeddings):
-        best_idx = None
-        best_score = -1.0
-        for idx, chunk_emb in zip(chunk_indices, chunk_embeddings):
-            score = _cosine_sim(np.asarray(sent_emb), np.asarray(chunk_emb))
-            if score > best_score:
-                best_score = score
-                best_idx = idx
-        if best_score < threshold:
-            assigned.append((sent, None, best_score))
+
+    used_indices = []
+    seen = set()
+    for match in re.finditer(r"\[(?:đoạn|doan)\s+(\d+)\]", answer, flags=re.IGNORECASE):
+        idx = int(match.group(1))
+        if idx in chunk_lookup and idx not in seen:
+            used_indices.append(idx)
+            seen.add(idx)
+    return used_indices
+
+
+def _strip_llm_citation_markers(answer: str) -> str:
+    cleaned = re.sub(r"\s*\[(?:đoạn|doan)\s+\d+\]", "", answer, flags=re.IGNORECASE)
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r" *\n *", "\n", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
+def _format_answer_layout(answer: str) -> str:
+    cleaned = re.sub(r"[ \t]+", " ", answer).strip()
+    cleaned = re.sub(r"(?<!^)\s+-\s+", "\n- ", cleaned)
+    cleaned = re.sub(r"(?<!^)\s+(\d+)\.\s+", r"\n\1. ", cleaned)
+    cleaned = re.sub(r":\s*\n-", ":\n\n-", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+
+    formatted_lines = []
+    inside_group = False
+    for raw_line in cleaned.splitlines():
+        line = raw_line.strip()
+        if not line:
+            formatted_lines.append("")
+            inside_group = False
+            continue
+
+        is_bullet = line.startswith("- ")
+        bullet_text = line[2:].strip() if is_bullet else line
+        is_group_heading = is_bullet and bullet_text.rstrip("* ").endswith(":")
+
+        if is_group_heading:
+            formatted_lines.append(bullet_text)
+        elif is_bullet and inside_group:
+            formatted_lines.append(f"  - {bullet_text}")
         else:
-            assigned.append((sent, best_idx, best_score))
- 
-    return assigned
+            formatted_lines.append(line)
+
+        inside_group = is_group_heading or (inside_group and is_bullet)
+
+    return "\n".join(formatted_lines).strip()
 
 def _expand_with_reference(
     db: Session,
@@ -108,9 +125,3 @@ def _expand_with_reference(
                 existing_ids.add(row[0].id)
 
     return reference_rows
-
-def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
-    denom = (np.linalg.norm(a) * np.linalg.norm(b))
-    if denom == 0:
-        return 0.0
-    return float(np.dot(a, b) / denom)
