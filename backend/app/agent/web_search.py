@@ -7,21 +7,27 @@ import re
 import time
 from urllib.parse import urlparse
 
+from app.services.chat.citations import _format_answer_layout
+
 logger = logging.getLogger(__name__)
 
 WEB_SEARCH_SYSTEM_PROMPT = """Bạn là chuyên gia tổng hợp thông tin pháp lý từ Internet.
 Tổng hợp câu trả lời dựa trên các kết quả web cung cấp.
 
 QUY TẮC BẮT BUỘC:
-1. Ghi LUÔN Ở ĐẦU CÂU dòng cảnh báo: "⚠️ Lưu ý: Thông tin tra cứu từ Internet mở, hãy cẩn trọng."
+1. Không tự ghi dòng cảnh báo về tra cứu Internet; hệ thống sẽ tự thêm cảnh báo.
 2. Nếu kết quả web không đủ để trả lời, nói dứt khoát: "Xin lỗi, không có thông tin online xác thực." và không kèm trích dẫn lung tung.
 3. Trích xuất và liệt kê URLs nguồn ở cuối câu trả lời dưới mục "Nguồn:".
 4. Mỗi URL nguồn nằm trên một dòng riêng, dạng "[id] https://...", không dùng Markdown link với id là chỉ số bắt đầu bằng 1 và tăng dần.
 5. Chỉ sử dụng thông tin có trong [KẾT QUẢ WEB], không suy diễn hoặc thêm khuyến nghị ngoài nguồn.
-6. Trả lời bằng tiếng Việt, ngắn gọn, rõ ràng; nếu có nhiều ý thì dùng gạch đầu dòng."""
+6. Trả lời bằng tiếng Việt, ngắn gọn, rõ ràng.
+7. Nếu câu hỏi có nhiều ý/câu hỏi con, viết mỗi câu hỏi con thành một dòng tiêu đề
+   in đậm dạng **Nội dung câu hỏi?** và KHÔNG thêm dấu gạch đầu dòng trước tiêu đề.
+   Viết câu trả lời ngay dưới tiêu đề đó. Chỉ dùng gạch đầu dòng cho danh sách thật sự."""
 
 WEB_SEARCH_NO_VERIFIED_INFO = "Xin lỗi, không có thông tin online xác thực."
 WEB_SEARCH_WARNING = "⚠️ Lưu ý: Thông tin tra cứu từ Internet, hãy cẩn trọng."
+WEB_SEARCH_WARNING_RE = re.compile(r"^\s*⚠️\s*Lưu ý:\s*Thông tin tra cứu từ Internet(?: mở)?, hãy cẩn trọng\.\s*", flags=re.IGNORECASE)
 URL_PATTERN = re.compile(r"https?://[^\s\])>]+")
 
 VN_LEGAL_DOMAINS: tuple[str,...] = (
@@ -179,37 +185,10 @@ def _strip_markdown_links(text: str) -> str:
     return re.sub(r"\[([^\]]+)\]\((https?://[^)]+)\)", r"\2", text)
 
 
-def _format_bullet_layout(text: str) -> str:
-    cleaned = re.sub(r"(?<!^)\s+-\s+", "\n- ", text)
-    cleaned = re.sub(r":\s*\n-", ":\n\n-", cleaned)
-    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-
-    lines = []
-    inside_group = False
-    for raw_line in cleaned.splitlines():
-        line = raw_line.strip()
-        if not line:
-            lines.append("")
-            inside_group = False
-            continue
-
-        is_bullet = line.startswith("- ")
-        bullet_text = line[2:].strip() if is_bullet else line
-        is_group_heading = is_bullet and bullet_text.rstrip("* ").endswith(":")
-        if is_group_heading:
-            lines.append(bullet_text)
-        elif is_bullet and inside_group:
-            lines.append(f"  - {bullet_text}")
-        else:
-            lines.append(line)
-        inside_group = is_group_heading or (inside_group and is_bullet)
-
-    return "\n".join(lines).strip()
-
-
 def _format_web_answer_body(answer: str, urls: list[str]) -> str:
     answer = _strip_markdown_links(answer.strip())
-    answer = answer.replace(WEB_SEARCH_WARNING, "").strip()
+    while WEB_SEARCH_WARNING_RE.match(answer):
+        answer = WEB_SEARCH_WARNING_RE.sub("", answer, count=1).strip()
     answer = re.sub(r"^\s*Nguồn:\s*", "", answer, flags=re.IGNORECASE).strip()
     answer = re.split(r"\n?\s*Nguồn:\s*", answer, maxsplit=1, flags=re.IGNORECASE)[0].strip()
 
@@ -218,7 +197,7 @@ def _format_web_answer_body(answer: str, urls: list[str]) -> str:
         answer = answer.replace(url, "").strip()
     answer = re.sub(r"\s*-\s*$", "", answer).strip()
     answer = re.sub(r"[ \t]+", " ", answer)
-    answer = _format_bullet_layout(answer)
+    answer = _format_answer_layout(answer)
 
     source_lines = "\n".join(f"[{idx}] {url}" for idx, url in enumerate(source_urls))
     sources_block = f"\n\nNguồn:\n{source_lines}" if source_lines else "\n\nNguồn:"

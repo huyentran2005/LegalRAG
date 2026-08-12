@@ -64,21 +64,31 @@ class OfficeRAG:
         [CÂU HỎI]:
         {question}
 
-        Hãy trả lời dựa trên tài liệu. Ghi rõ điều khoản được sử dụng vào câu trả lời. Nếu tài liệu không có thông tin, nói rõ "Không có
-        thông tin nào."
+        Hãy trả lời dựa trên tài liệu. Ghi rõ điều khoản được sử dụng vào câu trả lời. Nếu tài liệu thật sự không có căn cứ nào liên quan, nói rõ "Không có
+        thông tin nào." Không dùng câu này khi tài liệu đã có điều/khoản đủ để kết luận.
         Khi câu hỏi yêu cầu đánh giá đúng/sai hoặc phân loại nghĩa vụ/quyền/trách nhiệm,
         phải đối chiếu trực tiếp với điều khoản trong tài liệu. Nếu tài liệu phân biệt
         "nghĩa vụ riêng" và "nghĩa vụ chung", không được tự suy diễn một nghĩa vụ riêng
         thành nghĩa vụ chung chỉ vì có tài sản chung. Nếu tài liệu quy định một giao dịch
         hoặc thỏa thuận "vô hiệu", phải kết luận rõ là vô hiệu, không dùng cách nói mơ hồ
         như "có thể không có hiệu lực".
+        Với mỗi ý/câu hỏi con, hãy trả lời theo thứ tự: kết luận trực tiếp trước, sau đó
+        nêu căn cứ điều/khoản. Nếu điều luật cho phép kết luận "có", "không", "vô hiệu",
+        "nghĩa vụ riêng", hoặc "nghĩa vụ chung", phải dùng đúng kết luận đó; không dùng
+        "có thể", "thường", "cần tham khảo thêm", "không thể xác định rõ", "tài liệu
+        không cung cấp thông tin cụ thể", hoặc "để có kết luận chính xác" trong cùng ý.
+        Chỉ được nói thiếu thông tin khi không có đoạn tài liệu nào chứa căn cứ liên quan
+        đến ý đó.
         Trả lời đầy đủ thông tin (3-5 câu chi tiết), không thêm bất kỳ thông tin nào ngoài
         tài liệu. Với mỗi ý dùng thông tin từ tài liệu, ghi citation ngay sau ý đó bằng
         đúng định dạng [đoạn n], trong đó n là số đoạn đã cung cấp. Chỉ cite các đoạn
         thực sự được dùng để trả lời.
-        Bố cục câu trả lời phải dễ đọc: nếu có từ 2 ý trở lên, viết một câu dẫn ngắn,
-        sau đó xuống dòng và dùng danh sách gạch đầu dòng. Không dồn nhiều ý đánh số
-        trên cùng một dòng.
+        Bố cục câu trả lời phải dễ đọc. Nếu câu hỏi có nhiều ý/câu hỏi con, viết mỗi
+        câu hỏi con thành một dòng tiêu đề in đậm dạng **Nội dung câu hỏi?** và KHÔNG
+        thêm dấu gạch đầu dòng trước tiêu đề. Viết câu trả lời ngay dưới tiêu đề đó.
+        Chỉ dùng gạch đầu dòng cho danh sách nghĩa vụ/điều kiện thật sự, không dùng
+        gạch đầu dòng cho cả tiêu đề và câu trả lời. Không dồn nhiều ý đánh số trên
+        cùng một dòng.
         [TRẢ LỜI]:
     """)
         self.answer_parser = FocusedAnswerParser()
