@@ -27,7 +27,7 @@ def get_gemini_api_keys() -> list[str]:
     return keys
 
 
-def get_llm(provider: str = "gemini-2.5-flash", gemini_api_key: str | None = None):
+def get_llm(provider: str = "gemini-3.6-flash", gemini_api_key: str | None = None):
     if provider and provider.startswith("gemini"):
         keys = get_gemini_api_keys()
         api_key = gemini_api_key or (keys[0] if keys else None)

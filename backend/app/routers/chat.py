@@ -32,62 +32,92 @@ def _run_pipeline_with_gemini_key_rotation(
     source_ids: list[int] | None,
     provider: str,
 ):
-    if not provider.startswith("gemini"):
+    fallback_provider = _fallback_provider()
+
+    def run_with_provider(selected_provider: str, gemini_api_key: str | None = None):
         return _run_rag_pipeline(
             db=db,
             session=session,
             current_user_id=current_user_id,
             question=question,
             source_ids=source_ids,
-            provider=provider,
+            provider=selected_provider,
+            gemini_api_key=gemini_api_key,
         )
 
-    keys = get_gemini_api_keys()
-    if not keys:
-        raise RuntimeError("GEMINI_API_KEYS or GEMINI_API is required for Gemini provider.")
+    def run_with_gemini_keys():
+        keys = get_gemini_api_keys()
+        if not keys:
+            raise RuntimeError("GEMINI_API_KEYS or GEMINI_API is required for Gemini provider.")
 
-    last_quota_error = None
-    for key_index, api_key in enumerate(keys, start=1):
+        last_exc = None
+        for key_index, api_key in enumerate(keys, start=1):
+            try:
+                return run_with_provider("gemini-3.6-flash", gemini_api_key=api_key)
+            except Exception as exc:
+                last_exc = exc
+                logger.warning("Gemini key %s/%s failed, trying next key: %s", key_index, len(keys), exc)
+        raise last_exc or RuntimeError("All Gemini API keys failed.")
+
+    if provider.startswith("gemini"):
         try:
-            return _run_rag_pipeline(
-                db=db,
-                session=session,
-                current_user_id=current_user_id,
-                question=question,
-                source_ids=source_ids,
-                provider=provider,
-                gemini_api_key=api_key,
-            )
+            return run_with_gemini_keys()
         except Exception as exc:
-            if not _is_quota_exhausted_error(exc):
-                raise
-            last_quota_error = exc
-            logger.warning("Gemini key %s/%s quota exhausted, trying next key", key_index, len(keys))
+            logger.warning("Gemini failed, falling back to %s: %s", fallback_provider, exc)
+            return run_with_provider(fallback_provider)
 
-    raise last_quota_error or RuntimeError("All Gemini API keys failed.")
+    try:
+        return run_with_provider(provider)
+    except Exception as exc:
+        if provider == fallback_provider:
+            raise
+        logger.warning("Provider %s failed, falling back to Gemini: %s", provider, exc)
+        try:
+            return run_with_gemini_keys()
+        except Exception as gemini_exc:
+            logger.warning("Gemini failed after provider %s, falling back to %s: %s", provider, fallback_provider, gemini_exc)
+            return run_with_provider(fallback_provider)
 
 
 def _run_web_search_fallback(question: str, provider: str) -> dict:
-    if not provider.startswith("gemini"):
-        llm = get_llm(provider)
+    fallback_provider = _fallback_provider()
+
+    def run_with_provider(selected_provider: str, gemini_api_key: str | None = None) -> dict:
+        llm = get_llm(selected_provider, gemini_api_key=gemini_api_key)
         return answer_from_web_search(question, llm)
 
-    keys = get_gemini_api_keys()
-    if not keys:
-        raise RuntimeError("GEMINI_API_KEYS or GEMINI_API is required for Gemini provider.")
+    def run_with_gemini_keys() -> dict:
+        keys = get_gemini_api_keys()
+        if not keys:
+            raise RuntimeError("GEMINI_API_KEYS or GEMINI_API is required for Gemini provider.")
 
-    last_quota_error = None
-    for key_index, api_key in enumerate(keys, start=1):
+        last_exc = None
+        for key_index, api_key in enumerate(keys, start=1):
+            try:
+                return run_with_provider("gemini-3.6-flash", gemini_api_key=api_key)
+            except Exception as exc:
+                last_exc = exc
+                logger.warning("Gemini key %s/%s failed during web fallback, trying next key: %s", key_index, len(keys), exc)
+        raise last_exc or RuntimeError("All Gemini API keys failed.")
+
+    if provider.startswith("gemini"):
         try:
-            llm = get_llm(provider, gemini_api_key=api_key)
-            return answer_from_web_search(question, llm)
+            return run_with_gemini_keys()
         except Exception as exc:
-            if not _is_quota_exhausted_error(exc):
-                raise
-            last_quota_error = exc
-            logger.warning("Gemini key %s/%s quota exhausted during web fallback", key_index, len(keys))
+            logger.warning("Gemini web fallback failed, falling back to %s: %s", fallback_provider, exc)
+            return run_with_provider(fallback_provider)
 
-    raise last_quota_error or RuntimeError("All Gemini API keys failed.")
+    try:
+        return run_with_provider(provider)
+    except Exception as exc:
+        if provider == fallback_provider:
+            raise
+        logger.warning("Web search provider %s failed, falling back to Gemini: %s", provider, exc)
+        try:
+            return run_with_gemini_keys()
+        except Exception as gemini_exc:
+            logger.warning("Gemini web fallback failed after provider %s, falling back to %s: %s", provider, fallback_provider, gemini_exc)
+            return run_with_provider(fallback_provider)
 
 
 def _web_fallback_payload(question: str, provider: str) -> tuple[str, int, dict, list, list, dict]:
@@ -169,7 +199,7 @@ def ask_question( payload: AskRequest, db: Session = Depends(get_db), current_us
         db.add(session)
         db.flush()
  
-    primary_provider = payload.provider or "gemini-3.5-flash"
+    primary_provider = payload.provider or "gemini-3.6-flash"
     try:
         ans, results, chunk_lookup, _retrieval_question = _run_pipeline_with_gemini_key_rotation(
             db=db,

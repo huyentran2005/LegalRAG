@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     xai_model_name: str = "grok-4.3"
     gemini_api_key: str | None = None
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
-    gemini_model_name: str = "gemini-2.0-flash"
+    gemini_model_name: str = "gemini-3.6-flash"
     
     cors_origins: str = "http://localhost:5173"
 

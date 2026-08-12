@@ -5,7 +5,7 @@ import { useRag } from "../../context/useRag";
 
 const MODELS= [
   {id: "gpt-4o",label: "gpt-4o"},
-  {id: "gemini-3.5-flash", label: "Gemini 3.5"},
+  {id: "gemini-3.6-flash", label: "Gemini 3.6"},
   {id: "qwen2.5:3b", label:"Qwen 2.5"},
 ];
 
