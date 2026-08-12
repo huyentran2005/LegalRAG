@@ -33,6 +33,8 @@ def mean_pooling(token_embeddings, attention_mask):
     return summed / counts
 
 def embed(texts):
+    if not texts:
+        return np.empty((0, 384), dtype=np.float32)
     inputs = tokenizer(texts, padding=True, truncation=True, max_length=512, return_tensors="np")
     ort_inputs = {
         "input_ids": inputs["input_ids"],
