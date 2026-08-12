@@ -199,7 +199,7 @@ def _format_web_answer_body(answer: str, urls: list[str]) -> str:
     answer = re.sub(r"[ \t]+", " ", answer)
     answer = _format_answer_layout(answer)
 
-    source_lines = "\n".join(f"[{idx}] {url}" for idx, url in enumerate(source_urls))
+    source_lines = "\n".join(f"[{idx}] {url}" for idx, url in enumerate(source_urls, start=1))
     sources_block = f"\n\nNguồn:\n{source_lines}" if source_lines else "\n\nNguồn:"
     return f"{WEB_SEARCH_WARNING}\n\n{answer or WEB_SEARCH_NO_VERIFIED_INFO}{sources_block}"
 
