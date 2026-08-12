@@ -2,6 +2,50 @@ import { useRag } from "../../context/useRag";
 import CitationChip from "./CitationChip";
 import SourcePill from "./SourcePill";
 
+const URL_RE = /(https?:\/\/[^\s)>\]]+)/g;
+const BOLD_RE = /(\*\*[^*]+\*\*)/g;
+
+function TextWithBold({ text }) {
+  return String(text || "")
+    .split(BOLD_RE)
+    .map((part, index) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return (
+          <strong key={index} className="font-semibold">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      return <span key={index}>{part}</span>;
+    });
+}
+
+function TextWithLinks({ text }) {
+  return String(text || "")
+    .split(URL_RE)
+    .map((part, index) => {
+      if (!part.match(URL_RE)) {
+        return <TextWithBold key={index} text={part} />;
+      }
+
+      const href = part.replace(/[.,;]+$/, "");
+      const trailing = part.slice(href.length);
+      return (
+        <span key={index}>
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="text-indigo-700 underline decoration-indigo-300 underline-offset-2 break-all hover:text-indigo-dark"
+          >
+            {href}
+          </a>
+          {trailing}
+        </span>
+      );
+    });
+}
+
 export default function MessageBubble({ message }) {
   const { activeCite, panelOpen, openCitation } = useRag();
 
@@ -19,7 +63,7 @@ export default function MessageBubble({ message }) {
 
   return (
     <div className="mb-5">
-      <div className="text-[14.5px] leading-[1.7] text-ink">
+      <div className="whitespace-pre-wrap text-[14.5px] leading-[1.7] text-ink">
         {message.parts.map((p, i) =>
           p.cite ? (
             <CitationChip
@@ -33,7 +77,7 @@ export default function MessageBubble({ message }) {
               onClick={() => openCitation(message.id, p.cite)}
             />
           ) : (
-            <span key={i}>{p.text}</span>
+            <TextWithLinks key={i} text={p.text} />
           )
         )}
       </div>

@@ -30,3 +30,4 @@ tqdm==4.68.4
 transformers==5.13.1
 uvicorn==0.51.0
 litellm==1.96.0
+tavily-python==0.7.27
